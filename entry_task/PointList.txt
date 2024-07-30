@@ -1,0 +1,9 @@
+	X	Y	Z
+Femoral Lower point of Long bone axis	-90.08864684	-31.23032437	37.94942351
+Femoral Upper point of Long bone axis	-91.35554614	-29.97258775	55.63051974
+Femoral Medial tendon end point	-123.4337234	-4.258431911	7.944682121
+Femoral Lateral tendon end point	-38.14112091	-33.90839767	0.194792628
+Tibial Lower point of Long bone axis	-91.96363609	-29.72607236	-67.69284022
+Tibial Upper point of Long bone axis	-91.60319304	-28.2150266	-59.95424455
+Tibial Medial tendon end point	-106.7733307	-4.739022732	-29.38351059
+Tibial Lateral tendon end point	-62.18123627	-29.56071472	-34.04466248

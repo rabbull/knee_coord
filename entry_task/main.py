@@ -40,7 +40,7 @@ def build_coord(left: np.ndarray, right: np.ndarray, up: np.ndarray, down: np.nd
     unit_z = normalize(z)
 
     y_raw = up - down
-    y_raw_z_proj = np.dot(y_raw, unit_z) * y_raw
+    y_raw_z_proj = np.dot(y_raw, unit_z) * unit_z
     y = y_raw - y_raw_z_proj
     unit_y = normalize(y)
 

@@ -13,11 +13,11 @@ class Coordination(object):
         self.transformation_matrix[:3, :3] = R
 
     @property
-    def R(self):
+    def mat_r(self):
         return self.transformation_matrix[:3, :3]
 
     @property
-    def T(self):
+    def mat_t(self):
         return self.transformation_matrix[:3, 3].reshape([3, 1])
 
     def transform(self, x: np.ndarray) -> np.ndarray:
@@ -79,8 +79,8 @@ def main():
     )
 
     with np.printoptions(formatter={'float': '{:.2f}'.format}):
-        print(femoral_coordination.R)
-        print(femoral_coordination.T)
+        print(femoral_coordination.mat_r)
+        print(femoral_coordination.mat_t)
 
     """
     Tibial Coordination:
@@ -93,8 +93,8 @@ def main():
         points['Tibial Lower point of Long bone axis'],
     )
     with np.printoptions(formatter={'float': '{:.2f}'.format}):
-        print(tibial_coordination.R)
-        print(tibial_coordination.T)
+        print(tibial_coordination.mat_r)
+        print(tibial_coordination.mat_t)
 
 
 if __name__ == '__main__':

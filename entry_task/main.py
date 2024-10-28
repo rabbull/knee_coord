@@ -6,11 +6,11 @@ class Coordination(object):
     def __init__(self):
         self.transformation_matrix = np.eye(4)
 
-    def set_translation(self, T: np.ndarray):
-        self.transformation_matrix[:3, 3] = T
+    def set_translation(self, mat_t: np.ndarray):
+        self.transformation_matrix[:3, 3] = mat_t
 
-    def set_rotation(self, R: np.ndarray):
-        self.transformation_matrix[:3, :3] = R
+    def set_rotation(self, mat_r: np.ndarray):
+        self.transformation_matrix[:3, :3] = mat_r
 
     @property
     def mat_r(self):
@@ -24,6 +24,55 @@ class Coordination(object):
         x_hom = np.append(x, 1).reshape(4, 1)
         x_hom_new = self.transformation_matrix @ x_hom
         return x_hom_new[:3]
+
+    @property
+    def quaternion(self):
+        mat_r = self.mat_r
+        trace = np.trace(mat_r)
+        if trace > 0:
+            s = 0.5 / np.sqrt(trace + 1.0)
+            w = 0.25 / s
+            x = (mat_r[2, 1] - mat_r[1, 2]) * s
+            y = (mat_r[0, 2] - mat_r[2, 0]) * s
+            z = (mat_r[1, 0] - mat_r[0, 1]) * s
+        else:
+            if mat_r[0, 0] > mat_r[1, 1] and mat_r[0, 0] > mat_r[2, 2]:
+                s = 2.0 * np.sqrt(1.0 + mat_r[0, 0] - mat_r[1, 1] - mat_r[2, 2])
+                w = (mat_r[2, 1] - mat_r[1, 2]) / s
+                x = 0.25 * s
+                y = (mat_r[0, 1] + mat_r[1, 0]) / s
+                z = (mat_r[0, 2] + mat_r[2, 0]) / s
+            elif mat_r[1, 1] > mat_r[2, 2]:
+                s = 2.0 * np.sqrt(1.0 + mat_r[1, 1] - mat_r[0, 0] - mat_r[2, 2])
+                w = (mat_r[0, 2] - mat_r[2, 0]) / s
+                x = (mat_r[0, 1] + mat_r[1, 0]) / s
+                y = 0.25 * s
+                z = (mat_r[1, 2] + mat_r[2, 1]) / s
+            else:
+                s = 2.0 * np.sqrt(1.0 + mat_r[2, 2] - mat_r[0, 0] - mat_r[1, 1])
+                w = (mat_r[1, 0] - mat_r[0, 1]) / s
+                x = (mat_r[0, 2] + mat_r[2, 0]) / s
+                y = (mat_r[1, 2] + mat_r[2, 1]) / s
+                z = 0.25 * s
+        return np.array([x, y, z, w])
+
+    @property
+    def euler_angles(self):
+        mat_r = self.mat_r
+        sy = np.sqrt(mat_r[0, 0] ** 2 + mat_r[1, 0] ** 2)
+
+        singular = sy < 1e-6
+
+        if not singular:
+            x = np.arctan2(mat_r[2, 1], mat_r[2, 2])
+            y = np.arctan2(-mat_r[2, 0], sy)
+            z = np.arctan2(mat_r[1, 0], mat_r[0, 0])
+        else:
+            x = np.arctan2(-mat_r[1, 2], mat_r[1, 1])
+            y = np.arctan2(-mat_r[2, 0], sy)
+            z = 0
+
+        return np.array([x, y, z])
 
 
 def normalize(x: np.ndarray) -> np.ndarray:

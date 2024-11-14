@@ -12,3 +12,5 @@ open3d
 cgal
 tqdm
 rtree
+mypy
+nptyping[complete]

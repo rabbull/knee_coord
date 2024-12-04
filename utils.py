@@ -2,9 +2,13 @@ from typing import Union
 
 import numpy as np
 import trimesh
+from numpy import dtype
+from trimesh import Trimesh
 from nptyping import Shape
 from nptyping.ndarray import NDArray
 from scipy.spatial.transform import Rotation
+import trimesh.scene
+import trimesh.scene.transforms
 
 Real: type = np.float64
 RotationMatrix: type = NDArray[Shape['3, 3'], Real]
@@ -68,6 +72,22 @@ class Transformation3D(object):
         return self._h[:3, 3]
 
     @property
+    def mat_homo(self) -> HomogeneousMatrix:
+        return self._h
+
+    @property
+    def unit_x(self):
+        return self.mat_r[:3, 0]
+
+    @property
+    def unit_y(self):
+        return self.mat_r[:3, 1]
+
+    @property
+    def unit_z(self):
+        return self.mat_r[:3, 2]
+
+    @property
     def quaternion(self) -> Quaternion:
         return Rotation.from_matrix(self.mat_r).as_quat()
 
@@ -82,7 +102,7 @@ class Transformation3D(object):
         return self.apply_transformation(Transformation3D().set_translation(translation))
 
     def apply_transformation(self, rhs: 'Transformation3D') -> 'Transformation3D':
-        self._h = self._h @ rhs._h
+        self._h = rhs._h @ self._h
         return self
 
     def transform(self, x: Union[PointList3D, Point3D]) -> Union[PointList3D, Point3D]:
@@ -104,3 +124,52 @@ class Transformation3D(object):
 
     def relative_to(self, rhs: 'Transformation3D') -> 'Transformation3D':
         return Transformation3D(np.linalg.inv(rhs._h) @ self._h)
+
+
+def remove_bubbles(mesh: Trimesh) -> Trimesh:
+    components = mesh.split()
+    largest = None
+    for component in components:
+        if largest is None or component.volume > largest.volume:
+            largest = component
+    return largest
+
+
+def get_real_numbers_from_dict(d, keys):
+    return np.array([float(d[k]) for k in keys], dtype=Real)
+
+
+def show_model(path, *meshes):
+    scene = trimesh.Scene(list(meshes))
+    with open(path, 'wb') as f:
+        f.write(scene.save_image())
+
+
+# def show_model(_, *meshes):
+#     scene = trimesh.Scene(list(meshes))
+#     scene.show()
+
+
+def look_at(eye, center, up):
+    eye = np.array(eye, dtype=np.float64)
+    center = np.array(center, dtype=np.float64)
+    up = np.array(up, dtype=np.float64)
+
+    # Compute forward, right, and up vectors
+    forward = center - eye
+    forward /= np.linalg.norm(forward)
+
+    right = np.cross(up, forward)
+    right /= np.linalg.norm(right)
+
+    up = np.cross(forward, right)
+
+    # Create rotation matrix
+    rotation = np.stack([right, up, -forward], axis=1)  # Combine basis vectors
+
+    # Create transformation matrix
+    transform = np.eye(4)
+    transform[:3, :3] = rotation
+    transform[:3, 3] = -np.dot(rotation, eye)
+
+    return transform

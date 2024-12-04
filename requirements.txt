@@ -1,8 +1,8 @@
-numpy
-scipy
+numpy~=1.26.4
+scipy~=1.14.1
 pandas
-matplotlib
-trimesh
+matplotlib~=3.9.2
+trimesh~=4.5.2
 networkx
 pyglet<2
 manifold3d
@@ -13,4 +13,5 @@ cgal
 tqdm
 rtree
 mypy
-nptyping[complete]
+nptyping[complete]~=2.5.0
+pillow~=11.0.0

@@ -1,5 +1,6 @@
 import copy
 import logging
+from math import floor
 from typing import Self, cast, List, Tuple
 import csv
 from datetime import datetime
@@ -8,9 +9,9 @@ import numpy as np
 import trimesh
 from PIL import Image
 from matplotlib import pyplot as plt
-from numpy.ma.core import angle
+from matplotlib.colors import LinearSegmentedColormap
 from scipy.interpolate import griddata
-from shapely.measurement import distance
+from sklearn.cluster import KMeans
 
 import config
 from utils import *
@@ -18,6 +19,8 @@ from utils import *
 trimesh.util.attach_to_log(level=logging.INFO)
 
 WORLD_AXIS = trimesh.creation.axis(axis_length=100, axis_radius=2)
+
+depth_cmap = LinearSegmentedColormap.from_list("depth_map", ['blue', 'green', 'yellow', 'red', ])
 
 
 def get_animation_frame_path(index: int):
@@ -80,6 +83,9 @@ class BoneCoordination:
     def project(self, x):
         return self.t.inverse().transform(x)
 
+    def copy(self):
+        return copy.deepcopy(self)
+
 
 def main():
     femur_stl_path = 'acc_task/Femur.stl'
@@ -123,21 +129,28 @@ def main():
     transformations = read_bone_transformation_series(coord_series_csv_path)
     plot_data_list = []
     for i, (ft, tt) in enumerate(transformations):
+        if i > 1:
+            break
+
         plot_data = {
-            'femur_transform': ft, 'tibia_transform': tt,
+            'femur_transform': ft,
+            'tibia_transform': tt,
         }
         plot_data_list.append(plot_data)
 
-        coord = copy.deepcopy(ori_tibia_coord)
+        coord = ori_tibia_coord.copy()
         coord.t.apply_transformation(tt)
         plot_data['coordination'] = coord
 
-        tufm = efcm.copy().apply_transform(ft.mat_homo)
-        tfm = fm.copy().apply_transform(ft.mat_homo)
-        tfcm = fcm.copy().apply_transform(ft.mat_homo)
-        tutm = etcm.copy().apply_transform(tt.mat_homo)
-        ttm = tm.copy().apply_transform(tt.mat_homo)
-        ttcm = tcm.copy().apply_transform(tt.mat_homo)
+        if config.GENERATE_ANIMATION or config.GENERATE_DEPTH_MAP or config.GENERATE_DEPTH_CURVE:
+            tufm = efcm.copy().apply_transform(ft.mat_homo)
+            tfm = fm.copy().apply_transform(ft.mat_homo)
+            tfcm = fcm.copy().apply_transform(ft.mat_homo)
+            tutm = etcm.copy().apply_transform(tt.mat_homo)
+            ttm = tm.copy().apply_transform(tt.mat_homo)
+            ttcm = tcm.copy().apply_transform(tt.mat_homo)
+            plot_data['transformed_femur'] = tufm
+            plot_data['transformed_tibia'] = tutm
 
         if config.GENERATE_ANIMATION:
             tfcm.visual.vertex_colors = (200, 200, 100)
@@ -149,26 +162,28 @@ def main():
             img = Image.open(img_path)
             plot_data['animation_frame'] = img
 
-        origins, distances = calc_bone_distance_map(tfcm, ttcm, coord)
-        plot_data['bone_distance_map'] = {
-            'origins': origins,
-            'distances': distances,
-        }
-
-        contact_area = tufm.intersection(tutm)
-        components = contact_area.split()
-
-        contact_components = []
-        for component in components:
-            if component is None:
-                continue
-            origins, depths = calc_contact_depth_map(component, coord)
-            contact_components.append({
-                'component': component,
+        if config.GENERATE_DEPTH_MAP:
+            origins, distances = calc_bone_distance_map(tfcm, ttcm, coord)
+            plot_data['bone_distance_map'] = {
                 'origins': origins,
-                'depths': depths,
-            })
-        plot_data['components'] = contact_components
+                'distances': distances,
+            }
+
+        if config.GENERATE_DEPTH_CURVE or config.GENERATE_DEPTH_MAP:
+            contact_area = tufm.intersection(tutm)
+            components = contact_area.split()
+
+            contact_components = []
+            for component in components:
+                if component is None:
+                    continue
+                origins, depths = calc_contact_depth_map(component, coord)
+                contact_components.append({
+                    'component': component,
+                    'origins': origins,
+                    'depths': depths,
+                })
+            plot_data['components'] = contact_components
 
     if config.GENERATE_ANIMATION:
         gen_animation(
@@ -186,11 +201,12 @@ def plot_dof_curves(ofc, otc, plot_data_list):
     x = []
     y_tx, y_ty, y_tz = [], [], []
     y_rx, y_ry, y_rz = [], [], []
+
     for index, pd in enumerate(plot_data_list):
         x.append(index + 1)
         ft, tt = pd['femur_transform'], pd['tibia_transform']
-        fc = copy.deepcopy(ofc)
-        tc = copy.deepcopy(otc)
+        fc = ofc.copy()
+        tc = otc.copy()
         fc.t.apply_transformation(ft)
         tc.t.apply_transformation(tt)
         r = fc.t.relative_to(tc.t)
@@ -230,7 +246,6 @@ def plot_dof_curves(ofc, otc, plot_data_list):
     ax.plot(x, y_rz, 'x-')
     ax.set_title('Euler Angle (x-y-z) Z')
     fig.savefig('output/dof_curve_rz.png')
-
 
 
 def foo(efcm, etcm, tibia_coord):
@@ -319,7 +334,7 @@ def plot_max_depth_curve(plot_data_list):
 def plot_contact_depth_maps(extent, plot_data_list):
     grid_x, grid_y = np.mgrid[extent[0]:extent[1]:500j, extent[2]:extent[3]:500j]
 
-    distance_threshold = 20
+    distance_threshold = 10
     vmin, vmax = 1e9, -1e9
     for pd in plot_data_list:
         distances = pd['bone_distance_map']['distances']
@@ -329,32 +344,60 @@ def plot_contact_depth_maps(extent, plot_data_list):
         all_data = np.concatenate([-distances, c_depth])
         vmax = max(np.max(all_data), vmax)
         vmin = min(np.min(all_data), vmin)
-    print(vmin, vmax)
 
-    for i, pd in enumerate(plot_data_list):
+    for frame_index, pd in enumerate(plot_data_list):
         coord = pd['coordination']
-
-        origins = pd['bone_distance_map']['origins']
+        origins = pd['bone_distance_map']['origins'].astype(Real)
         distances = pd['bone_distance_map']['distances']
-        mask = distances < 2.5
+        mask = distances < distance_threshold
         origins = origins[mask]
-        distances = distances[mask]
-        p2d = coord.project(origins)[:, :2]
-        z = griddata(p2d, -distances, (grid_x, grid_y), method='linear')
+        depths = -distances[mask]
+        deepest = []
 
         for c in pd['components']:
-            c_origins = c['origins']
+            c_origins = c['origins'].astype(Real)
             c_depth = c['depths']
-            p2d = coord.project(c_origins)[:, :2]
-            cz = griddata(p2d, c_depth, (grid_x, grid_y), method='linear')
-            mask = ~np.isnan(cz)
-            z[mask] = cz[mask]
+            c_mesh = c['component']
+            vertices = c_mesh.vertices.astype(Real)
+
+            deepest.append(c_origins[np.argmax(c_depth)])
+
+            s_origins = (np.round(origins, decimals=3) * 1e4).astype(np.int64)
+            s_vertices = (np.round(vertices, decimals=3) * 1e4).astype(np.int64)
+            intersect = np.intersect1d(s_origins, s_vertices)
+            keep = np.all(~np.isin(s_origins, intersect), axis=1)
+            origins = origins[keep]
+            depths = depths[keep]
+
+            origins = np.vstack([origins, c_origins])
+            depths = np.concatenate([depths, c_depth])
+
+        # viz
+        # cmap = plt.get_cmap('viridis')
+        # normalized_values = (depths - np.min(depths)) / (np.max(depths) - np.min(depths))
+        # colors = (cmap(normalized_values) * 255).astype(np.uint8)
+        # trimesh.PointCloud(origins, colors=colors).show()
+
+        labels = KMeans(n_clusters=2, random_state=42).fit_predict(origins)
+        groups = [labels == j for j in range(2)]
+
+        c_origins = [origins[grp_mask] for grp_mask in groups]
+        c_origins_2d = [coord.project(origins)[:, :2] for origins in c_origins]
+        c_depth = [depths[grp_mask] for grp_mask in groups]
+        c_z = [griddata(c_origins_2d[i], c_depth[i], (grid_x, grid_y), method='linear') for i in range(2)]
+        z = np.where(np.isnan(c_z[0]), c_z[1], c_z[0])
+        z = np.where(np.isnan(z), c_z[0], z)
 
         fig, ax = plt.subplots()
-        fig.suptitle(f'Frame {i}')
-        im = ax.imshow(z.T, extent=extent, origin='lower', cmap='viridis', vmin=vmin, vmax=vmax)
+        fig.suptitle(f'Frame {frame_index}')
+        im = ax.imshow(z.T, extent=extent, origin='lower', cmap=depth_cmap, vmin=vmin, vmax=vmax)
+        ax.contour(grid_x, grid_y, z, levels=int(floor((vmax - vmin) / 2)))
         cb = fig.colorbar(im, ax=ax)
         cb.set_label('Depth')
+        if len(deepest) > 0:
+            deepest = np.array(deepest)
+            deepest_2d = coord.project(deepest)[:, :2]
+            ax.scatter(deepest_2d[:, 0], deepest_2d[:, 1], marker='+', s=100, color='turquoise')
         fig.show()
 
 
@@ -408,20 +451,21 @@ def calc_contact_depth_map(contact_component, coord):
 def calc_bone_distance_map(fm, tm, coord):
     origins, directions = prepare_rays_from_model(tm, -coord.t.unit_z)
     locations, ray_indices, _ = \
-        fm.ray.intersects_location(origins, directions)
+        fm.ray.intersects_location(origins, directions, multiple_hits=False)
     origins = origins[ray_indices]
     depths = np.linalg.norm(locations - origins, axis=1)
     return origins, depths
 
 
 def prepare_rays_from_model(model, direction, reverse=False):
-    mask = np.dot(model.vertex_normals, direction) > 0
+    ud = normalize(direction)
+    mask = np.dot(model.vertex_normals, ud) > 0
     origins = model.vertices[mask]
-    eps = 0.001
+    eps = 1e-7
     if reverse:
-        direction = -direction
-    origins += eps * direction
-    directions = np.tile(direction, (len(origins), 1))
+        ud = -ud
+    origins += ud * eps
+    directions = np.tile(ud, (len(origins), 1))
     return origins, directions
 
 

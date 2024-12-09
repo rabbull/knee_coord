@@ -1,5 +1,5 @@
 Femur_Medial 12.495,-35.767,-50.206
-Femur_Lateral 65.749,-31.447,36.374
+Femur_Lateral 97.998,-10.346,-48.938
 Femur_Distal 64.128,-34.167,0.000
 Femur_Proximal 65.749,-31.447,36.374
 Tibia_Medial 37.335,-28.324,-80.896

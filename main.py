@@ -6,6 +6,7 @@ import csv
 from datetime import datetime
 
 import numpy as np
+import tqdm
 import trimesh
 from PIL import Image
 from matplotlib import pyplot as plt
@@ -123,15 +124,12 @@ def main():
     extent = [l - padding, r + padding, b - padding, t + padding]
 
     if config.Y_ROTATE_EXP:
-        foo(efcm, etcm, ori_tibia_coord)
+        rotate_y(efcm, etcm, ori_tibia_coord)
 
     coord_series_csv_path = 'Bill_Kinematic.csv'
     transformations = read_bone_transformation_series(coord_series_csv_path)
     plot_data_list = []
-    for i, (ft, tt) in enumerate(transformations):
-        if i > 1:
-            break
-
+    for i, (ft, tt) in enumerate(tqdm.tqdm(transformations)):
         plot_data = {
             'femur_transform': ft,
             'tibia_transform': tt,
@@ -248,7 +246,7 @@ def plot_dof_curves(ofc, otc, plot_data_list):
     fig.savefig('output/dof_curve_rz.png')
 
 
-def foo(efcm, etcm, tibia_coord):
+def rotate_y(efcm, etcm, tibia_coord):
     x = np.arange(-10, 10.1, 5)
     ax = trimesh.creation.axis(axis_length=20, axis_radius=0.1)
     ym = []
@@ -332,6 +330,9 @@ def plot_max_depth_curve(plot_data_list):
 
 
 def plot_contact_depth_maps(extent, plot_data_list):
+    def frame_path(index):
+        return f'output/depth_map_frame_{index}.jpg'
+
     grid_x, grid_y = np.mgrid[extent[0]:extent[1]:500j, extent[2]:extent[3]:500j]
 
     distance_threshold = 10
@@ -372,12 +373,6 @@ def plot_contact_depth_maps(extent, plot_data_list):
             origins = np.vstack([origins, c_origins])
             depths = np.concatenate([depths, c_depth])
 
-        # viz
-        # cmap = plt.get_cmap('viridis')
-        # normalized_values = (depths - np.min(depths)) / (np.max(depths) - np.min(depths))
-        # colors = (cmap(normalized_values) * 255).astype(np.uint8)
-        # trimesh.PointCloud(origins, colors=colors).show()
-
         labels = KMeans(n_clusters=2, random_state=42).fit_predict(origins)
         groups = [labels == j for j in range(2)]
 
@@ -389,16 +384,22 @@ def plot_contact_depth_maps(extent, plot_data_list):
         z = np.where(np.isnan(z), c_z[0], z)
 
         fig, ax = plt.subplots()
-        fig.suptitle(f'Frame {frame_index}')
-        im = ax.imshow(z.T, extent=extent, origin='lower', cmap=depth_cmap, vmin=vmin, vmax=vmax)
-        ax.contour(grid_x, grid_y, z, levels=int(floor((vmax - vmin) / 2)))
+        fig.suptitle(f'Depth Map - Frame {frame_index}')
+        im = ax.contourf(grid_x, grid_y, z, levels=int(floor((vmax - vmin))), cmap=depth_cmap)
         cb = fig.colorbar(im, ax=ax)
         cb.set_label('Depth')
         if len(deepest) > 0:
             deepest = np.array(deepest)
             deepest_2d = coord.project(deepest)[:, :2]
             ax.scatter(deepest_2d[:, 0], deepest_2d[:, 1], marker='+', s=100, color='turquoise')
-        fig.show()
+        fig.savefig(frame_path(frame_index))
+
+    frames = []
+    for frame_index in range(len(plot_data_list)):
+        path = frame_path(frame_index)
+        frame = Image.open(path)
+        frames.append(frame)
+    gen_animation(frames, 'output/depth_map_animation.gif')
 
 
 def gen_animation(frames, output_path, fps: float = 5):
@@ -461,7 +462,7 @@ def prepare_rays_from_model(model, direction, reverse=False):
     ud = normalize(direction)
     mask = np.dot(model.vertex_normals, ud) > 0
     origins = model.vertices[mask]
-    eps = 1e-7
+    eps = 1e-4
     if reverse:
         ud = -ud
     origins += ud * eps
@@ -508,7 +509,6 @@ def calc_and_draw_contact(fm, tm, tc: BoneCoordination, output_path):
             'max_distance': max(distances)
         }
 
-    # 绘制合并图像
     for name, data in all_data.items():
         ax.imshow(data['grid_z'].T, extent=(min(data['x']), max(data['x']), min(
             data['y']), max(data['y'])), origin='lower', cmap='viridis')

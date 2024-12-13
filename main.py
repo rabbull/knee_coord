@@ -147,8 +147,8 @@ def main():
             tutm = etcm.copy().apply_transform(tt.mat_homo)
             ttm = tm.copy().apply_transform(tt.mat_homo)
             ttcm = tcm.copy().apply_transform(tt.mat_homo)
-            plot_data['transformed_femur'] = tufm
-            plot_data['transformed_tibia'] = tutm
+            plot_data['transformed_femur_mesh'] = tufm
+            plot_data['transformed_tibia_mesh'] = tutm
 
         if config.GENERATE_ANIMATION:
             tfcm.visual.vertex_colors = (200, 200, 100)
@@ -340,9 +340,9 @@ def plot_contact_depth_maps(extent, plot_data_list):
     for pd in plot_data_list:
         distances = pd['bone_distance_map']['distances']
         distances = distances[(~np.isnan(distances)) & (distances < distance_threshold)]
-        c_depth = np.concatenate([c['depths'] for c in pd['components']])
-        c_depth = c_depth[~np.isnan(c_depth)]
-        all_data = np.concatenate([-distances, c_depth])
+        g_depth = np.concatenate([c['depths'] for c in pd['components']])
+        g_depth = g_depth[~np.isnan(g_depth)]
+        all_data = np.concatenate([-distances, g_depth])
         vmax = max(np.max(all_data), vmax)
         vmin = min(np.min(all_data), vmin)
 
@@ -376,13 +376,14 @@ def plot_contact_depth_maps(extent, plot_data_list):
         labels = KMeans(n_clusters=2, random_state=42).fit_predict(origins)
         groups = [labels == j for j in range(2)]
 
-        c_origins = [origins[grp_mask] for grp_mask in groups]
-        c_origins_2d = [coord.project(origins)[:, :2] for origins in c_origins]
-        c_depth = [depths[grp_mask] for grp_mask in groups]
-        c_z = [griddata(c_origins_2d[i], c_depth[i], (grid_x, grid_y), method='linear') for i in range(2)]
-        z = np.where(np.isnan(c_z[0]), c_z[1], c_z[0])
-        z = np.where(np.isnan(z), c_z[0], z)
+        g_origins = [origins[grp_mask] for grp_mask in groups]
+        g_origins_2d = [coord.project(origins)[:, :2] for origins in g_origins]
+        g_depth = [depths[grp_mask] for grp_mask in groups]
+        g_z = [griddata(g_origins_2d[i], g_depth[i], (grid_x, grid_y), method='linear') for i in range(2)]
+        z = np.where(np.isnan(g_z[0]), g_z[1], g_z[0])
+        z = np.where(np.isnan(z), g_z[0], z)
 
+        # depth map
         fig, ax = plt.subplots()
         fig.suptitle(f'Depth Map - Frame {frame_index}')
         im = ax.contourf(grid_x, grid_y, z, levels=int(floor((vmax - vmin))), cmap=depth_cmap)
@@ -394,12 +395,20 @@ def plot_contact_depth_maps(extent, plot_data_list):
             ax.scatter(deepest_2d[:, 0], deepest_2d[:, 1], marker='+', s=100, color='turquoise')
         fig.savefig(frame_path(frame_index))
 
-    frames = []
-    for frame_index in range(len(plot_data_list)):
-        path = frame_path(frame_index)
-        frame = Image.open(path)
-        frames.append(frame)
-    gen_animation(frames, 'output/depth_map_animation.gif')
+        if frame_index == 1:
+            mesh = pd['transformed_tibia_mesh']
+            mesh: trimesh.Trimesh
+            vertices = mesh.vertices
+            coord.project(vertices)
+
+            r_vertices = (np.round(vertices, decimals=3) * 1e4).astype(np.int64)
+            r_origins = (np.round(origins, decimals=3) * 1e4).astype(np.int64)
+            intersection = np.intersect1d(r_origins, r_vertices)
+            matched = np.all(np.isin(r_vertices, intersection), axis=1)
+
+
+    # generate gif
+    gen_animation([Image.open(frame_path(i)) for i in range(len(plot_data_list))], 'output/depth_map_animation.gif')
 
 
 def gen_animation(frames, output_path, fps: float = 5):

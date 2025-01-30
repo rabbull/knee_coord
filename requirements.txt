@@ -2,7 +2,7 @@ numpy~=1.26.4
 scipy~=1.14.1
 pandas
 matplotlib~=3.9.2
-trimesh~=4.5.2
+trimesh~=4.6.0
 networkx
 pyglet<2
 manifold3d

@@ -2,6 +2,7 @@ import copy
 import json
 import logging
 import os
+import sys
 from collections import defaultdict
 from math import floor
 from typing import Self, cast, List, Tuple
@@ -169,21 +170,16 @@ def main():
     ])
     task_bone_animation = ctx.add_task('bone_animation', gen_bone_animation, deps=[task_bone_animation_frames])
 
-    def foo(fms, tms, coords):
-        res = []
-        for fm, tm, coord in zip(fms, tms, coords):
-            print(fm, tm, coord)
-            res.append(calc_bone_distance_map(fm, tm, coord))
-        return res
-
     task_frame_bone_distance_maps = \
         ctx.add_task('frame_bone_distance_maps',
-                     foo,
+                     lambda fms, tms, coords: [
+                         calc_bone_distance_map(fm, tm, coord) for fm, tm, coord in zip(fms, tms, coords)
+                     ],
                      deps=[task_frame_extended_femur_meshes,
                            task_frame_extended_tibia_meshes,
                            task_frame_coordinates])
     task_frame_bone_distance_map_origins = ctx.add_task('frame_bone_distance_map_origins',
-                                                        lambda pairs: [pair[1] for pair in pairs],
+                                                        lambda pairs: [pair[0] for pair in pairs],
                                                         deps=[task_frame_bone_distance_maps])
     task_frame_bone_distance_map_distances = ctx.add_task('frame_bone_distance_map_distances',
                                                           lambda pairs: [pair[1] for pair in pairs],
@@ -197,7 +193,8 @@ def main():
                                                  deps=[task_frame_contact_areas])
     task_frame_contact_component_depth_maps = \
         ctx.add_task('frame_contact_component_depth_maps',
-                     lambda coord, fcs: [[calc_contact_depth_map(c, coord) for c in cs] for cs in fcs],
+                     lambda coords, fcs: [[calc_contact_depth_map(c, coord) for c in cs] for coord, cs in
+                                          zip(coords, fcs)],
                      deps=[task_frame_coordinates, task_frame_contact_components])
     task_frame_contact_component_depth_map_origins = \
         ctx.add_task('frame_frame_contact_component_depth_map_origins',
@@ -228,6 +225,7 @@ def main():
         ctx.add_task('contact_depth_map_extent', gen_contact_depth_map_extent, deps=[task_extent])
     task_contact_depth_map_background = ctx.add_task('contact_depth_map_background', gen_contact_depth_map_background,
                                                      deps=[task_contact_depth_map_extent,
+                                                           task_tibia_mesh,
                                                            task_tibia_cart_mesh,
                                                            task_original_coordinates_tibia])
     task_contact_depth_map_frames = ctx.add_task('frame_contact_depth_map_frames', plot_contact_depth_maps,
@@ -269,20 +267,24 @@ def get_contact_depth_map_resolution():
     return 500, 500
 
 
-def gen_contact_depth_map_background(contact_depth_map_extent, tibia_cart_mesh, tibia_coord):
+def gen_contact_depth_map_background(contact_depth_map_extent, tibia_mesh, tibia_cart_mesh, tibia_coord):
     extent = contact_depth_map_extent
     largest_side = extent[1]
     res = get_contact_depth_map_resolution()
-    bg = gen_orthographic_photo(tibia_cart_mesh.copy(), tibia_coord, res, largest_side, largest_side)
+    tcm = tibia_cart_mesh.copy()
+    tcm.visual.vertex_colors = (220, 220, 220)
+    tm = tibia_mesh.copy()
+    tm.visual.vertex_colors = (100, 100, 100)
+    bg = gen_orthographic_photo([tcm, tm], tibia_coord, res, largest_side, largest_side)
     bg = bg.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     return bg
 
 
 def plot_contact_depth_maps(extent, background, frame_coordinates,
                             frame_bone_distance_map_origins, frame_bone_distance_map_distances,
-                            task_frame_contact_components,
-                            task_frame_contact_component_depth_map_origins,
-                            task_frame_contact_component_depth_map_depths):
+                            frame_contact_components,
+                            frame_contact_component_depth_map_origins,
+                            frame_contact_component_depth_map_depths):
     def frame_path(index):
         return f'output/depth_map_frame_{index}.jpg'
 
@@ -290,14 +292,14 @@ def plot_contact_depth_maps(extent, background, frame_coordinates,
 
     res = get_contact_depth_map_resolution()
     grid_x, grid_y = np.mgrid[extent[0]:extent[1]:res[0] * 1j, extent[2]:extent[3]:res[1] * 1j]
-    distance_threshold = 10
+    distance_threshold = 5
     vmin, vmax = 1e9, -1e9
     for frame_index in range(n):
         distances = frame_bone_distance_map_distances[frame_index]
         distances = distances[(~np.isnan(distances)) & (distances < distance_threshold)]
-        frame_contact_depths = task_frame_contact_component_depth_map_depths[frame_index]
+        frame_contact_depths = frame_contact_component_depth_map_depths[frame_index]
         if len(frame_contact_depths) > 0:
-            g_depth = frame_contact_depths
+            g_depth = np.concatenate(frame_contact_depths)
             g_depth = g_depth[~np.isnan(g_depth)]
             all_data = np.concatenate([-distances, g_depth])
         else:
@@ -316,9 +318,9 @@ def plot_contact_depth_maps(extent, background, frame_coordinates,
         deepest = []
 
         for c_mesh, c_origins, c_depth in zip(
-                task_frame_contact_components[frame_index],
-                task_frame_contact_component_depth_map_origins[frame_index],
-                task_frame_contact_component_depth_map_depths[frame_index]
+                frame_contact_components[frame_index],
+                frame_contact_component_depth_map_origins[frame_index],
+                frame_contact_component_depth_map_depths[frame_index]
         ):
             vertices = c_mesh.vertices.astype(Real)
             deepest.append(c_origins[np.argmax(c_depth)])
@@ -348,6 +350,7 @@ def plot_contact_depth_maps(extent, background, frame_coordinates,
         ax.imshow(background, extent=extent, interpolation='none', aspect='equal')
         im = ax.contourf(
             grid_x, grid_y, z,
+            levels=np.arange(vmin, vmax, 0.5),
             cmap=depth_cmap,
             alpha=0.5,
         )
@@ -404,7 +407,7 @@ def load_frame_bone_coordinates() -> list[tuple[BoneCoordination, BoneCoordinati
     with open(config.FRAME_RELATIVE_TRANSFORM_FILE, 'r') as fp:
         lines = list(filter(lambda l: l.startswith('['), fp.readlines()))
     frame_transformations = []
-    for line_index, line in enumerate(lines[:2]):
+    for line_index, line in enumerate(lines):
         data = np.array(json.loads(line), dtype=Real)
         if line_index % 2 == 0:
             femur_transformation = BoneCoordination.from_translation_and_quat(data[:3], data[3:])
@@ -422,12 +425,13 @@ def calc_extent(extended_tibia_mesh, tibia_coord, padding=5):
     return [l - padding, r + padding, b - padding, t + padding]
 
 
-def gen_orthographic_photo(mesh: trimesh.Trimesh, coord: BoneCoordination, res: Tuple[int, int], xmag: float,
+def gen_orthographic_photo(meshes: list[trimesh.Trimesh], coord: BoneCoordination, res: Tuple[int, int], xmag: float,
                            ymag: float) -> Image.Image:
-    mesh.vertices = coord.project(mesh.vertices)
-    pyr_tibia_cart_mesh = pyr.Mesh.from_trimesh(mesh)
     pyr_scene = pyr.Scene()
-    pyr_scene.add(pyr_tibia_cart_mesh)
+    for mesh in meshes:
+        mesh.vertices = coord.project(mesh.vertices)
+        pyr_mesh = pyr.Mesh.from_trimesh(mesh)
+        pyr_scene.add(pyr_mesh)
     pyr_camera = pyrender.OrthographicCamera(xmag, ymag, znear=0.1, zfar=1e5)
     pyr_camera_pose = np.array([
         [-1, 0, 0, 0],

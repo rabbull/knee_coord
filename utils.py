@@ -173,3 +173,8 @@ def look_at(eye, center, up):
     transform[:3, 3] = -np.dot(rotation, eye)
 
     return transform
+
+
+def hex_to_rgb(h: str) -> tuple:
+    h = h.lstrip('#')
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))

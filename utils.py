@@ -178,3 +178,11 @@ def look_at(eye, center, up):
 def hex_to_rgb(h: str) -> tuple:
     h = h.lstrip('#')
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def hex_to_rgb1(h: str) -> tuple:
+    return tuple(c / 255.0 for c in hex_to_rgb(h))
+
+
+def hex_to_rgba1(h: str) -> tuple:
+    return tuple(list(hex_to_rgb1(h)) + [1.0])

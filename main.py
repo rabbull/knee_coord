@@ -1,19 +1,13 @@
 import copy
-import itertools
 import json
 import logging
 import os
-import sys
-from collections import defaultdict
-from math import floor
-from typing import Self, cast, List, Tuple, Optional, Iterable, Sequence
+from typing import Self, List, Tuple, Optional, Sequence
 import csv
 from datetime import datetime
 
 import numpy as np
-import pyrender
 import scipy.interpolate
-import tqdm
 import trimesh
 import pyrender as pyr
 from PIL import Image
@@ -31,7 +25,8 @@ trimesh.util.attach_to_log(level=logging.INFO)
 
 WORLD_AXIS = trimesh.creation.axis(axis_length=100, axis_radius=2)
 
-depth_cmap = LinearSegmentedColormap.from_list("depth_map", ['blue', 'green', 'yellow', 'red', ])
+depth_cmap = LinearSegmentedColormap.from_list(
+    "depth_map", ['blue', 'green', 'yellow', 'red', ])
 
 
 def get_frame_output_directory(index):
@@ -89,35 +84,47 @@ class BoneCoordination:
 def main():
     ctx = task.Context()
 
-    task_femur_mesh = ctx.add_task('femur_mesh', lambda: load_mesh(config.FEMUR_MODEL_FILE))
-    task_tibia_mesh = ctx.add_task('tibia_mesh', lambda: load_mesh(config.TIBIA_MODEL_FILE))
-    task_femur_cart_mesh = ctx.add_task('femur_cart_mesh', lambda: load_mesh(config.FEMUR_CARTILAGE_MODEL_FILE))
-    task_tibia_cart_mesh = ctx.add_task('tibia_cart_mesh', lambda: load_mesh(config.TIBIA_CARTILAGE_MODEL_FILE))
+    task_femur_mesh = ctx.add_task(
+        'femur_mesh', lambda: load_mesh(config.FEMUR_MODEL_FILE))
+    task_tibia_mesh = ctx.add_task(
+        'tibia_mesh', lambda: load_mesh(config.TIBIA_MODEL_FILE))
+    task_femur_cart_mesh = ctx.add_task(
+        'femur_cart_mesh', lambda: load_mesh(config.FEMUR_CARTILAGE_MODEL_FILE))
+    task_tibia_cart_mesh = ctx.add_task(
+        'tibia_cart_mesh', lambda: load_mesh(config.TIBIA_CARTILAGE_MODEL_FILE))
 
     task_extended_femur_mesh = \
-        ctx.add_task('extended_femur_mesh', mesh_union, deps=[task_femur_mesh, task_femur_cart_mesh])
+        ctx.add_task('extended_femur_mesh', mesh_union, deps=[
+                     task_femur_mesh, task_femur_cart_mesh])
     task_extended_tibia_mesh = \
-        ctx.add_task('extended_tibia_mesh', mesh_union, deps=[task_tibia_mesh, task_tibia_cart_mesh])
+        ctx.add_task('extended_tibia_mesh', mesh_union, deps=[
+                     task_tibia_mesh, task_tibia_cart_mesh])
 
     # check waterproof
     task_all_extended_meshes = ctx.add_task('all_extended_meshes', lambda f, t: [f, t],
                                             deps=[task_extended_femur_mesh, task_extended_tibia_mesh])
     task_watertight_test_extended_meshes = ctx.add_task('watertight_test_extended_meshes',
-                                                        lambda meshes: not any(not m.is_watertight for m in meshes),
+                                                        lambda meshes: not any(
+                                                            not m.is_watertight for m in meshes),
                                                         deps=[task_all_extended_meshes])
     if not task_watertight_test_extended_meshes():
-        raise ValueError(f'model is not watertight: {[m.is_watertight for m in task_all_extended_meshes()]}')
+        raise ValueError(
+            f'model is not watertight: {[m.is_watertight for m in task_all_extended_meshes()]}')
 
     task_original_coordinates = ctx.add_task('original_coordinates',
                                              lambda: load_coord_from_file(config.FEATURE_POINT_FILE))
     task_original_coordinates_femur = \
-        ctx.add_task('original_coordinates_femur', take_kth(0), deps=[task_original_coordinates])
+        ctx.add_task('original_coordinates_femur', take_kth(0),
+                     deps=[task_original_coordinates])
     task_original_coordinates_tibia = \
-        ctx.add_task('original_coordinates_tibia', take_kth(1), deps=[task_original_coordinates])
+        ctx.add_task('original_coordinates_tibia', take_kth(1),
+                     deps=[task_original_coordinates])
 
-    task_extent = ctx.add_task('extent', calc_extent, deps=[task_extended_tibia_mesh, task_original_coordinates_tibia])
+    task_extent = ctx.add_task('extent', calc_extent, deps=[
+                               task_extended_tibia_mesh, task_original_coordinates_tibia])
     task_contact_depth_map_extent = \
-        ctx.add_task('contact_depth_map_extent', gen_contact_depth_map_extent, deps=[task_extent])
+        ctx.add_task('contact_depth_map_extent',
+                     gen_contact_depth_map_extent, deps=[task_extent])
     task_contact_depth_map_background_femur = ctx.add_task('contact_depth_map_background_femur',
                                                            gen_contact_depth_map_background,
                                                            deps=[
@@ -140,19 +147,25 @@ def main():
                                              task_original_coordinates_tibia])
 
     if config.MOVEMENT_DATA_FORMAT == config.MomentDataFormat.CSV:
-        task_frame_bone_coordinates = ctx.add_task('frame_bone_coordinates', load_frame_bone_coordinates_csv)
+        task_frame_bone_coordinates = ctx.add_task(
+            'frame_bone_coordinates', load_frame_bone_coordinates_csv)
     elif config.MOVEMENT_DATA_FORMAT == config.MomentDataFormat.JSON:
-        task_frame_bone_coordinates = ctx.add_task('frame_bone_coordinates', load_frame_bone_coordinates_raw)
+        task_frame_bone_coordinates = ctx.add_task(
+            'frame_bone_coordinates', load_frame_bone_coordinates_raw)
     else:
-        raise NotImplementedError(f'Unknown MOVEMENT_DATA_FORMAT: {config.MOVEMENT_DATA_FORMAT}')
+        raise NotImplementedError(
+            f'Unknown MOVEMENT_DATA_FORMAT: {config.MOVEMENT_DATA_FORMAT}')
 
     task_frame_bone_transformations = ctx.add_task('frame_bone_transformations',
-                                                   lambda bcs: [tuple(e.t for e in bc) for bc in bcs],
+                                                   lambda bcs: [
+                                                       tuple(e.t for e in bc) for bc in bcs],
                                                    deps=[task_frame_bone_coordinates])
     task_frame_bone_transformations_femur = \
-        ctx.add_task('frame_bone_transformations_femur', list_take_kth(0), deps=[task_frame_bone_transformations])
+        ctx.add_task('frame_bone_transformations_femur', list_take_kth(
+            0), deps=[task_frame_bone_transformations])
     task_frame_bone_transformations_tibia = \
-        ctx.add_task('frame_bone_transformations_tibia', list_take_kth(1), deps=[task_frame_bone_transformations])
+        ctx.add_task('frame_bone_transformations_tibia', list_take_kth(
+            1), deps=[task_frame_bone_transformations])
 
     task_frame_coordinates = ctx.add_task('frame_coordinates', calc_frame_coordinates,
                                           deps=[task_original_coordinates_tibia, task_frame_bone_transformations_tibia])
@@ -172,10 +185,11 @@ def main():
                      deps=[task_extended_tibia_mesh, task_frame_bone_transformations_tibia])
 
     task_bone_animation_frames = ctx.add_task('bone_animation_frames', gen_bone_animation_frames, deps=[
-        task_frame_femur_meshes, task_frame_tibia_meshes,
+        task_frame_femur_meshes, task_frame_tibia_meshes, task_frame_coordinates,
         task_frame_femur_cart_meshes, task_frame_tibia_cart_meshes,
     ])
-    task_bone_animation = ctx.add_task('bone_animation', gen_bone_animation, deps=[task_bone_animation_frames])
+    task_bone_animation = ctx.add_task('bone_animation', gen_bone_animation, deps=[
+                                       task_bone_animation_frames])
 
     task_frame_contact_areas = ctx.add_task('frame_contact_areas', get_contact_area,
                                             deps=[
@@ -185,13 +199,15 @@ def main():
                                             ])
 
     if config.DEPTH_DIRECTION == config.DepthDirection.Z_AXIS:
-        job = lambda _, coords: [coord.t.unit_z for coord in coords]
+        def job(_, coords): return [coord.t.unit_z for coord in coords]
     elif config.DEPTH_DIRECTION == config.DepthDirection.CONTACT_PLANE:
         job = calc_frame_contact_plane_normal_vectors
     elif config.DEPTH_DIRECTION == config.DepthDirection.VERTEX_NORMAL:
-        job = lambda contact_areas, _: [contact_area.vertex_normal for contact_area in contact_areas]
+        def job(contact_areas, _): return [
+            contact_area.vertex_normal for contact_area in contact_areas]
     else:
-        raise NotImplementedError(f'Unknown DEPTH_DIRECTION: {config.DEPTH_DIRECTION}')
+        raise NotImplementedError(
+            f'Unknown DEPTH_DIRECTION: {config.DEPTH_DIRECTION}')
     task_frame_ray_directions = ctx.add_task(
         'frame_frame_ray_directions', job,
         deps=[task_frame_contact_areas, task_frame_coordinates],
@@ -202,13 +218,17 @@ def main():
     task_frame_tibia_cart_thickness = ctx.add_task('frame_tibia_cart_thickness', calc_frame_cart_thickness,
                                                    deps=[task_frame_ray_directions, task_frame_tibia_cart_meshes])
     task_frame_femur_cart_thickness_origins = \
-        ctx.add_task('frame_femur_cart_thickness_origins', list_take_kth(0), deps=[task_frame_femur_cart_thickness])
+        ctx.add_task('frame_femur_cart_thickness_origins', list_take_kth(
+            0), deps=[task_frame_femur_cart_thickness])
     task_frame_femur_cart_thickness_map = \
-        ctx.add_task('frame_femur_cart_thickness_map', list_take_kth(1), deps=[task_frame_femur_cart_thickness])
+        ctx.add_task('frame_femur_cart_thickness_map', list_take_kth(
+            1), deps=[task_frame_femur_cart_thickness])
     task_frame_tibia_cart_thickness_origins = \
-        ctx.add_task('frame_tibia_cart_thickness_origins', list_take_kth(0), deps=[task_frame_tibia_cart_thickness])
+        ctx.add_task('frame_tibia_cart_thickness_origins', list_take_kth(
+            0), deps=[task_frame_tibia_cart_thickness])
     task_frame_tibia_cart_thickness_map = \
-        ctx.add_task('frame_tibia_cart_thickness_map', list_take_kth(1), deps=[task_frame_tibia_cart_thickness])
+        ctx.add_task('frame_tibia_cart_thickness_map', list_take_kth(
+            1), deps=[task_frame_tibia_cart_thickness])
 
     task_frame_femur_cart_thickness_origins_projected = ctx.add_task(
         'frame_femur_cart_thickness_origins_projected', project_cart_thickness_origins,
@@ -219,15 +239,17 @@ def main():
         deps=[task_frame_tibia_cart_thickness_origins, task_frame_coordinates],
     )
     task_plot_femur_cart_thickness = ctx.add_task(
-        'task_plot_femur_cart_thickness',
-        lambda a, b, c, d: plot_frame_cart_thickness_heatmap(a, b, c, d, 'femur', 1),
+        'plot_femur_cart_thickness',
+        lambda a, b, c, d: plot_frame_cart_thickness_heatmap(
+            a, b, c, d, 'femur', 1),
         deps=[task_contact_depth_map_extent,
               task_contact_depth_map_background_femur,
               task_frame_femur_cart_thickness_map,
               task_frame_femur_cart_thickness_origins_projected])
     task_plot_tibia_cart_thickness = ctx.add_task(
-        'task_plot_tibia_cart_thickness',
-        lambda a, b, c, d: plot_frame_cart_thickness_heatmap(a, b, c, d, 'tibia', 2),
+        'plot_tibia_cart_thickness',
+        lambda a, b, c, d: plot_frame_cart_thickness_heatmap(
+            a, b, c, d, 'tibia', 2),
         deps=[task_contact_depth_map_extent,
               task_contact_depth_map_background_tibia,
               task_frame_tibia_cart_thickness_map,
@@ -241,22 +263,27 @@ def main():
                            task_frame_tibia_meshes,
                            task_frame_ray_directions])
     task_frame_bone_distance_map_origins = \
-        ctx.add_task('frame_bone_distance_map_origins', list_take_kth(0), deps=[task_frame_bone_distance_maps])
+        ctx.add_task('frame_bone_distance_map_origins', list_take_kth(
+            0), deps=[task_frame_bone_distance_maps])
     task_frame_bone_distance_map_distances = \
-        ctx.add_task('frame_bone_distance_map_distances', list_take_kth(1), deps=[task_frame_bone_distance_maps])
+        ctx.add_task('frame_bone_distance_map_distances',
+                     list_take_kth(1), deps=[task_frame_bone_distance_maps])
 
     task_frame_contact_components = \
-        ctx.add_task('frame_contact_components', get_contact_components, deps=[task_frame_contact_areas])
+        ctx.add_task('frame_contact_components',
+                     get_contact_components, deps=[task_frame_contact_areas])
     task_frame_contact_component_depth_maps = \
         ctx.add_task('frame_contact_component_depth_maps', calc_contact_depth_map,
                      deps=[task_frame_ray_directions, task_frame_contact_components])
     task_frame_contact_component_depth_map_origins = \
         ctx.add_task('frame_frame_contact_component_depth_map_origins',
-                     lambda dms: [[pair[0] for pair in dm] for dm in dms] if dms else None,
+                     lambda dms: [[pair[0] for pair in dm]
+                                  for dm in dms] if dms else None,
                      deps=[task_frame_contact_component_depth_maps])
     task_frame_contact_component_depth_map_depths = \
         ctx.add_task('frame_frame_contact_component_depth_map_depths',
-                     lambda dms: [[pair[1] for pair in dm] for dm in dms] if dms else None,
+                     lambda dms: [[pair[1] for pair in dm]
+                                  for dm in dms] if dms else None,
                      deps=[task_frame_contact_component_depth_maps])
 
     task_max_depth_curve = ctx.add_task('max_depth_curve', plot_max_depth_curve,
@@ -272,8 +299,10 @@ def main():
                                      task_frame_bone_transformations_femur,
                                      task_frame_bone_transformations_tibia,
                                  ])
-    task_plot_dof_curves = ctx.add_task('plot_dof_curves', plot_dof_curves, deps=[task_dof_data])
-    task_interpolate_dof = ctx.add_task('interpolate_dof', interpolate_dof, deps=[task_dof_data])
+    task_plot_dof_curves = ctx.add_task(
+        'plot_dof_curves', plot_dof_curves, deps=[task_dof_data])
+    task_interpolate_dof = ctx.add_task(
+        'interpolate_dof', interpolate_dof, deps=[task_dof_data])
 
     task_contact_depth_map_frames = ctx.add_task('frame_contact_depth_map_frames', plot_contact_depth_maps,
                                                  deps=[
@@ -288,7 +317,8 @@ def main():
                                                  ])
     task_contact_depth_map_animation = \
         ctx.add_task('frame_contact_depth_map_animation',
-                     lambda fs: gen_animation(fs, os.path.join(config.OUTPUT_DIRECTORY, 'depth_map_animation.gif')),
+                     lambda fs: gen_animation(fs, os.path.join(
+                         config.OUTPUT_DIRECTORY, 'depth_map_animation.gif')),
                      deps=[task_contact_depth_map_frames])
     if config.Y_ROTATE_EXP:
         task_exp_y_rotation()
@@ -386,13 +416,19 @@ def gen_contact_depth_map_background(contact_depth_map_extent, tibia_mesh, tibia
     largest_side = extent[1]
     res = get_heatmap_resolution()
     tm = tibia_mesh.copy()
-    tm.visual.vertex_colors = config.DEPTH_MAP_BONE_COLOR_TIBIA
+    tm.visual.vertex_colors = hex_to_rgba1(config.DEPTH_MAP_BONE_COLOR_TIBIA)
     meshes = [tm]
     if tibia_cart_mesh:
         tcm = tibia_cart_mesh.copy()
-        tcm.visual.vertex_colors = config.DEPTH_MAP_CARTILAGE_COLOR_TIBIA
+        tcm.visual.vertex_colors = hex_to_rgba1(config.DEPTH_MAP_CARTILAGE_COLOR_TIBIA)
         meshes.append(tcm)
-    bg = gen_orthographic_photo(meshes, tibia_coord, res, largest_side, largest_side)
+    bg = gen_orthographic_photo(
+        meshes, tibia_coord, res, largest_side, largest_side, np.array([
+            [-1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, -1, -1000],
+            [0, 0, 0, 1],
+        ]), config.DEPTH_MAP_LIGHT_INTENSITY)
     bg = bg.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     return bg
 
@@ -413,7 +449,8 @@ def plot_contact_depth_maps(extent,
     exclude_frames = set()
     for frame_index in range(n):
         distances = frame_bone_distance_map_distances[frame_index]
-        distances = distances[(~np.isnan(distances)) & (distances < distance_threshold)]
+        distances = distances[(~np.isnan(distances)) &
+                              (distances < distance_threshold)]
         depths = frame_contact_component_depth_map_depths
         frame_contact_depths = depths[frame_index] if depths else []
         if len(frame_contact_depths) > 0:
@@ -452,8 +489,10 @@ def plot_contact_depth_maps(extent,
             ):
                 c_vertices = c_mesh.vertices.astype(Real)
                 deepest.append(c_origins[np.argmax(c_depth)])
-                s_origins = (np.round(origins, decimals=3) * 1e4).astype(np.int64)
-                s_vertices = (np.round(c_vertices, decimals=3) * 1e4).astype(np.int64)
+                s_origins = (np.round(origins, decimals=3)
+                             * 1e4).astype(np.int64)
+                s_vertices = (np.round(c_vertices, decimals=3)
+                              * 1e4).astype(np.int64)
                 intersect = np.intersect1d(s_origins, s_vertices)
                 keep = np.all(~np.isin(s_origins, intersect), axis=1)
                 origins = origins[keep]
@@ -474,7 +513,8 @@ def plot_contact_depth_maps(extent,
         for i in range(2):
             if (g_origins_2d[i] is not None and len(g_origins_2d[i]) > 0
                     and g_depth[i] is not None and len(g_depth[i]) > 0):
-                g_z.append(griddata(g_origins_2d[i], g_depth[i], (grid_x, grid_y), method='linear'))
+                g_z.append(
+                    griddata(g_origins_2d[i], g_depth[i], (grid_x, grid_y), method='linear'))
         if len(g_z) == 2:
             z = np.where(np.isnan(g_z[0]), g_z[1], g_z[0])
             z = np.where(np.isnan(z), g_z[0], z)
@@ -484,7 +524,8 @@ def plot_contact_depth_maps(extent,
         # depth map
         fig, ax = plt.subplots()
         fig.suptitle(f'Depth Map - Frame {frame_index}')
-        ax.imshow(background, extent=extent, interpolation='none', aspect='equal')
+        ax.imshow(background, extent=extent,
+                  interpolation='none', aspect='equal')
         im = ax.contourf(
             grid_x, grid_y, z,
             levels=np.arange(vmin, vmax, 1),
@@ -496,8 +537,10 @@ def plot_contact_depth_maps(extent,
         if len(deepest) > 0:
             deepest = np.array(deepest)
             deepest_2d = coord.project(deepest)[:, :2]
-            ax.scatter(deepest_2d[:, 0], deepest_2d[:, 1], marker='+', s=100, color='turquoise')
-        image_path = os.path.join(get_frame_output_directory(frame_index), f'depth_map_frame_{frame_index}.jpg')
+            ax.scatter(deepest_2d[:, 0], deepest_2d[:, 1],
+                       marker='+', s=100, color='turquoise')
+        image_path = os.path.join(get_frame_output_directory(
+            frame_index), f'depth_map_frame_{frame_index}.jpg')
         directory = os.path.dirname(image_path)
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -507,41 +550,84 @@ def plot_contact_depth_maps(extent,
 
 
 def gen_bone_animation(bone_animation_frames):
-    gen_animation(bone_animation_frames, os.path.join(config.OUTPUT_DIRECTORY, 'animation.gif'))
+    gen_animation(bone_animation_frames, os.path.join(
+        config.OUTPUT_DIRECTORY, 'animation.gif'))
 
 
-def gen_bone_animation_frames(frame_femur_meshes, frame_tibia_meshes,
+def gen_bone_animation_frames(frame_femur_meshes, frame_tibia_meshes, frame_coordinates,
                               frame_femur_cart_meshes=None, frame_tibia_cart_meshes=None):
     num_frames = len(frame_femur_meshes)
     assert num_frames == len(frame_tibia_meshes)
     if frame_femur_cart_meshes and frame_tibia_cart_meshes:
-        assert num_frames == len(frame_femur_cart_meshes) == len(frame_tibia_cart_meshes)
+        assert num_frames == len(frame_femur_cart_meshes)
+        assert num_frames == len(frame_tibia_cart_meshes)
 
     images = []
     for i in range(num_frames):
-        tfm = frame_femur_meshes[i].copy()
-        ttm = frame_tibia_meshes[i].copy()
-        tfm.visual.vertex_colors = hex_to_rgb(config.ANIMATION_BONE_COLOR_FEMUR)
-        ttm.visual.vertex_colors = hex_to_rgb(config.ANIMATION_BONE_COLOR_TIBIA)
-        scene = trimesh.Scene([tfm, ttm])
+        fm = frame_femur_meshes[i].copy()
+        tm = frame_tibia_meshes[i].copy()
+        fm.visual.vertex_colors = hex_to_rgba1(
+            config.ANIMATION_BONE_COLOR_FEMUR)
+        tm.visual.vertex_colors = hex_to_rgba1(
+            config.ANIMATION_BONE_COLOR_TIBIA)
+        meshes = [fm, tm]
 
         if (frame_femur_cart_meshes and frame_tibia_cart_meshes and
                 frame_femur_cart_meshes[i] and frame_tibia_cart_meshes[i]):
-            tfcm = frame_femur_cart_meshes[i].copy()
-            ttcm = frame_tibia_cart_meshes[i].copy()
-            tfcm.visual.vertex_colors = hex_to_rgb(config.ANIMATION_CARTILAGE_COLOR_FEMUR)
-            ttcm.visual.vertex_colors = hex_to_rgb(config.ANIMATION_CARTILAGE_COLOR_TIBIA)
-            scene.add_geometry(tfcm)
-            scene.add_geometry(ttcm)
+            fcm = frame_femur_cart_meshes[i].copy()
+            tcm = frame_tibia_cart_meshes[i].copy()
+            fcm.visual.vertex_colors = hex_to_rgba1(
+                config.ANIMATION_CARTILAGE_COLOR_FEMUR)
+            tcm.visual.vertex_colors = hex_to_rgba1(
+                config.ANIMATION_CARTILAGE_COLOR_TIBIA)
+            meshes.extend([fcm, tcm])
 
-        image_data = scene.save_image(visible=False)
-        image_path = os.path.join(get_frame_output_directory(i), f'animation_frame_{i}.png')
+        rot_90 = np.array([
+            [0, 1, 0, 0],
+            [-1, 0, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+        ])
+        rot_90_rev = np.linalg.inv(rot_90)
+        pose_x = np.array([
+            [0, 0, -1, -1000],
+            [0, -1, 0, 0],
+            [-1, 0, 0, 0],
+            [0, 0, 0, 1]
+        ]) @ rot_90
+        pose_x_rev = np.array([
+            [0, 0, 1, 1000],
+            [0, -1, 0, 0],
+            [1, 0, 0, 0],
+            [0, 0, 0, 1]
+        ]) @ rot_90_rev
+        pose_front = np.array([
+            [-1, 0, 0, 0],
+            [0, 0, 1, 1000],
+            [0, 1, 0, 0],
+            [0, 0, 0, 1]
+        ]) @ rot_90 @ rot_90
+
+        if config.ANIMATION_DIRECTION == config.AnimationCameraDirection.FIX_TIBIA_FRONT:
+            camera_pose = pose_front
+        elif config.ANIMATION_DIRECTION == config.AnimationCameraDirection.FIX_TIBIA_L2M:
+            camera_pose = pose_x
+        elif config.ANIMATION_DIRECTION == config.AnimationCameraDirection.FIX_TIBIA_M2L:
+            camera_pose = pose_x_rev
+        else:
+            raise NotImplementedError(
+                f'Unknown Animation Camera Direction: {config.ANIMATION_DIRECTION}')
+
+        image: Image.Image = gen_orthographic_photo(
+            meshes, frame_coordinates[i], config.ANIMATION_RESOLUTION, 128, 128, camera_pose, config.ANIMATION_LIGHT_INTENSITY)
+
+        image_path = os.path.join(
+            get_frame_output_directory(i), f'animation_frame_{i}.png')
         directory = os.path.dirname(image_path)
         if not os.path.exists(directory):
             os.makedirs(directory)
-        with open(image_path, 'wb') as f:
-            f.write(image_data)
-        image = Image.open(image_path)
+        image.save(image_path)
+
         images.append(image)
     return images
 
@@ -562,10 +648,13 @@ def load_frame_bone_coordinates_raw() -> list[tuple[BoneCoordination, BoneCoordi
     for line_index, line in enumerate(lines):
         data = np.array(json.loads(line), dtype=Real)
         if line_index % 2 == 0:
-            femur_transformation = BoneCoordination.from_translation_and_quat(data[:3], data[3:])
+            femur_transformation = BoneCoordination.from_translation_and_quat(
+                data[:3], data[3:])
         else:
-            tibia_transformation = BoneCoordination.from_translation_and_quat(data[:3], data[3:])
-            frame_transformations.append((femur_transformation, tibia_transformation))
+            tibia_transformation = BoneCoordination.from_translation_and_quat(
+                data[:3], data[3:])
+            frame_transformations.append(
+                (femur_transformation, tibia_transformation))
     return frame_transformations
 
 
@@ -576,7 +665,8 @@ def load_frame_bone_coordinates_csv() -> list[tuple[BoneCoordination, BoneCoordi
         reader = csv.DictReader(f, delimiter=',')
         for row in reader:
             tx, ty, tz = float(row['tx']), float(row['ty']), float(row['tz'])
-            r0, r1, r2, r3 = float(row['r0']), float(row['r1']), float(row['r2']), float(row['r3'])
+            r0, r1, r2, r3 = float(row['r0']), float(
+                row['r1']), float(row['r2']), float(row['r3'])
             coord = BoneCoordination.from_translation_and_quat(
                 translation=np.array([tx, ty, tz]),
                 quat=np.array([r0, r1, r2, r3]),
@@ -603,23 +693,19 @@ def calc_extent(extended_tibia_mesh, tibia_coord, padding=5):
 
 
 def gen_orthographic_photo(meshes: list[trimesh.Trimesh], coord: BoneCoordination, res: Tuple[int, int], xmag: float,
-                           ymag: float) -> Image.Image:
+                           ymag: float, camera_pose: np.array, light_intensity=3.0) -> Image.Image:
     pyr_scene = pyr.Scene()
     for mesh in meshes:
+        mesh = mesh.copy()
         mesh.vertices = coord.project(mesh.vertices)
         pyr_mesh = pyr.Mesh.from_trimesh(mesh)
         pyr_scene.add(pyr_mesh)
-    pyr_camera = pyrender.OrthographicCamera(xmag, ymag, znear=0.1, zfar=1e5)
-    pyr_camera_pose = np.array([
-        [-1, 0, 0, 0],
-        [0, 1, 0, 0],
-        [0, 0, -1, -500],
-        [0, 0, 0, 1],
-    ])
-    pyr_scene.add(pyr_camera, pose=pyr_camera_pose)
-    pyr_light = pyrender.DirectionalLight(color=np.ones(3), intensity=1.0)
-    pyr_scene.add(pyr_light, pose=pyr_camera_pose)
-    renderer = pyr.OffscreenRenderer(viewport_width=res[0], viewport_height=res[1])
+    pyr_camera = pyr.OrthographicCamera(xmag, ymag, znear=0.1, zfar=1e5)
+    pyr_scene.add(pyr_camera, pose=camera_pose)
+    pyr_light = pyr.DirectionalLight(color=np.ones(3), intensity=3.0)
+    pyr_scene.add(pyr_light, pose=camera_pose)
+    renderer = pyr.OffscreenRenderer(
+        viewport_width=res[0], viewport_height=res[1])
     color, _ = renderer.render(pyr_scene)
     img = Image.fromarray(color)
     return img
@@ -645,9 +731,12 @@ def calc_dof(original_coordinates_femur, original_coordinates_tibia,
         axis_zx = axis[:, [2, 0]]
         rotated_axis_zx = rotated_axis[:, [2, 0]]
 
-        a1 = np.arctan2(np.cross(axis_xy, rotated_axis_xy), np.einsum('ij,ij->i', axis_xy, rotated_axis_xy))
-        a2 = np.arctan2(np.cross(axis_yz, rotated_axis_yz), np.einsum('ij,ij->i', axis_yz, rotated_axis_yz))
-        a3 = np.arctan2(np.cross(axis_zx, rotated_axis_zx), np.einsum('ij,ij->i', axis_zx, rotated_axis_zx))
+        a1 = np.arctan2(np.cross(axis_xy, rotated_axis_xy),
+                        np.einsum('ij,ij->i', axis_xy, rotated_axis_xy))
+        a2 = np.arctan2(np.cross(axis_yz, rotated_axis_yz),
+                        np.einsum('ij,ij->i', axis_yz, rotated_axis_yz))
+        a3 = np.arctan2(np.cross(axis_zx, rotated_axis_zx),
+                        np.einsum('ij,ij->i', axis_zx, rotated_axis_zx))
 
         return [a1[0], a2[1], a3[2]]
 
@@ -736,7 +825,8 @@ def interpolate_dof(dof_data):
             dof_interpolate_data[' - '.join([dof_name, method_name])] = yi
             ax.plot(xi, yi, label=method_name)
         ax.legend()
-        path = os.path.join(config.OUTPUT_DIRECTORY, f'dof_curve_interpolated_{dof_name}.png')
+        path = os.path.join(config.OUTPUT_DIRECTORY,
+                            f'dof_curve_interpolated_{dof_name}.png')
         fig.savefig(path)
 
     path = os.path.join(config.OUTPUT_DIRECTORY, 'dof_curve_interpolated.mat')
@@ -756,21 +846,25 @@ def exp_y_rotation(efcm, etcm, tibia_coord):
         t.vertices = tibia_coord.project(t.vertices)
         f = efcm.copy()
         f.vertices = tibia_coord.project(f.vertices)
-        f = f.apply_transform(Transformation3D().apply_rotation(Rotation.from_euler('y', arc)).mat_homo)
+        f = f.apply_transform(Transformation3D().apply_rotation(
+            Rotation.from_euler('y', arc)).mat_homo)
 
         cs = f.intersection(t).split()
         scene = trimesh.Scene([ax] + cs)
         scene.set_camera(center=(0, 0, 0), distance=96)
-        img_data = scene.save_image(visible=False)
-        img_path = os.path.join(config.OUTPUT_DIRECTORY, f'rotate_{deg:.1f}_deg_z.png')
+        img_data = scene.save_image(visible=True)
+        img_path = os.path.join(config.OUTPUT_DIRECTORY,
+                                f'rotate_{deg:.1f}_deg_z.png')
         with open(img_path, 'wb') as f:
             f.write(img_data)
         scenes_z.append(Image.open(img_path))
 
         scene = trimesh.Scene([ax] + cs)
-        scene.set_camera(center=(0, 0, 0), distance=96, angles=(np.pi / 2, 0, 0))
-        img_data = scene.save_image(visible=False)
-        img_path = os.path.join(config.OUTPUT_DIRECTORY, f'rotate_{deg:.1f}_deg_y.png')
+        scene.set_camera(center=(0, 0, 0), distance=96,
+                         angles=(np.pi / 2, 0, 0))
+        img_data = scene.save_image(visible=True)
+        img_path = os.path.join(config.OUTPUT_DIRECTORY,
+                                f'rotate_{deg:.1f}_deg_y.png')
         with open(img_path, 'wb') as f:
             f.write(img_data)
         scenes_y.append(Image.open(img_path))
@@ -792,8 +886,10 @@ def exp_y_rotation(efcm, etcm, tibia_coord):
     plt.ylabel('Max Depth')
     plt.legend()
 
-    gen_animation(scenes_z, os.path.join(config.OUTPUT_DIRECTORY, 'rotation_animation_z.gif'))
-    gen_animation(scenes_y, os.path.join(config.OUTPUT_DIRECTORY, 'rotation_animation_y.gif'))
+    gen_animation(scenes_z, os.path.join(
+        config.OUTPUT_DIRECTORY, 'rotation_animation_z.gif'))
+    gen_animation(scenes_y, os.path.join(
+        config.OUTPUT_DIRECTORY, 'rotation_animation_y.gif'))
 
 
 def plot_max_depth_curve(frame_contact_components, contact_component_depth_maps, frame_coordinates):
@@ -825,7 +921,8 @@ def plot_max_depth_curve(frame_contact_components, contact_component_depth_maps,
     ax.plot(np.arange(n), mdms, label='Medial')
     ax.plot(np.arange(n), mdls, label='Lateral')
     ax.legend()
-    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, 'max_depth_curve_split.png'))
+    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY,
+                'max_depth_curve_split.png'))
 
 
 def gen_animation(frames, output_path, fps: float = 2.5):
@@ -1000,7 +1097,8 @@ def plot_frame_cart_thickness_heatmap(extent, background, frame_cart_thickness_m
     frames = []
     for frame_index in range(n):
         fig, ax = plt.subplots()
-        fig.suptitle(f'Cartilage Thickness Map - Frame {frame_index} - {bone_name.capitalize()}')
+        fig.suptitle(
+            f'Cartilage Thickness Map - Frame {frame_index} - {bone_name.capitalize()}')
         origins = frame_cart_thickness_origins_projected[frame_index]
         thickness_map = frame_cart_thickness_maps[frame_index]
         labels = KMeans(num_components).fit_predict(origins)
@@ -1009,7 +1107,8 @@ def plot_frame_cart_thickness_heatmap(extent, background, frame_cart_thickness_m
         for i in range(num_components):
             component_origins = origins[labels == i]
             component_thickness_map = thickness_map[labels == i]
-            component_z = griddata(component_origins, component_thickness_map, (grid_x, grid_y), method='linear')
+            component_z = griddata(
+                component_origins, component_thickness_map, (grid_x, grid_y), method='linear')
             im = ax.contourf(
                 grid_x, grid_y, component_z,
                 levels=np.arange(vmin, vmax, 1),
@@ -1018,7 +1117,8 @@ def plot_frame_cart_thickness_heatmap(extent, background, frame_cart_thickness_m
             )
             ims.append(im)
 
-        ax.imshow(background, extent=extent, interpolation='none', aspect='equal')
+        ax.imshow(background, extent=extent,
+                  interpolation='none', aspect='equal')
         cb = fig.colorbar(ims[0], ax=ax)
         cb.set_label('Thickness')
         image_path = os.path.join(

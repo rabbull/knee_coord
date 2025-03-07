@@ -17,3 +17,4 @@ nptyping[complete]~=2.5.0
 pillow~=11.0.0
 scikit-learn~=1.5.2
 embreex
+pyrender

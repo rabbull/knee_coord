@@ -23,7 +23,7 @@ from utils import *
 
 trimesh.util.attach_to_log(level=logging.INFO)
 
-WORLD_AXIS = trimesh.creation.axis(axis_length=100, axis_radius=2)
+WORLD_AXIS = my_axis(axis_length=200, axis_radius=2)
 
 depth_cmap = LinearSegmentedColormap.from_list(
     "depth_map", ['blue', 'green', 'yellow', 'red', ])
@@ -156,10 +156,10 @@ def main():
         raise NotImplementedError(
             f'Unknown MOVEMENT_DATA_FORMAT: {config.MOVEMENT_DATA_FORMAT}')
 
-    task_frame_bone_transformations = ctx.add_task('frame_bone_transformations',
-                                                   lambda bcs: [
-                                                       tuple(e.t for e in bc) for bc in bcs],
-                                                   deps=[task_frame_bone_coordinates])
+    task_frame_bone_transformations = \
+        ctx.add_task('frame_bone_transformations', 
+                     lambda bcs: [tuple(e.t for e in bc) for bc in bcs],
+                     deps=[task_frame_bone_coordinates])
     task_frame_bone_transformations_femur = \
         ctx.add_task('frame_bone_transformations_femur', list_take_kth(
             0), deps=[task_frame_bone_transformations])
@@ -167,8 +167,10 @@ def main():
         ctx.add_task('frame_bone_transformations_tibia', list_take_kth(
             1), deps=[task_frame_bone_transformations])
 
-    task_frame_coordinates = ctx.add_task('frame_coordinates', calc_frame_coordinates,
-                                          deps=[task_original_coordinates_tibia, task_frame_bone_transformations_tibia])
+    task_frame_femur_coordinates = ctx.add_task('frame_femur_coordinates', calc_frame_coordinates,
+                                                deps=[task_original_coordinates_femur, task_frame_bone_transformations_femur])
+    task_frame_tibia_coordinates = ctx.add_task('frame_tibia_coordinates', calc_frame_coordinates,
+                                                deps=[task_original_coordinates_tibia, task_frame_bone_transformations_tibia])
     task_frame_femur_meshes = ctx.add_task('frame_femur_meshes', transform_frame_mesh,
                                            deps=[task_femur_mesh, task_frame_bone_transformations_femur])
     task_frame_tibia_meshes = ctx.add_task('frame_tibia_meshes', transform_frame_mesh,
@@ -185,7 +187,8 @@ def main():
                      deps=[task_extended_tibia_mesh, task_frame_bone_transformations_tibia])
 
     task_bone_animation_frames = ctx.add_task('bone_animation_frames', gen_bone_animation_frames, deps=[
-        task_frame_femur_meshes, task_frame_tibia_meshes, task_frame_coordinates,
+        task_frame_femur_meshes, task_frame_tibia_meshes,
+        task_frame_femur_coordinates, task_frame_tibia_coordinates,
         task_frame_femur_cart_meshes, task_frame_tibia_cart_meshes,
     ])
     task_bone_animation = ctx.add_task('bone_animation', gen_bone_animation, deps=[
@@ -210,7 +213,7 @@ def main():
             f'Unknown DEPTH_DIRECTION: {config.DEPTH_DIRECTION}')
     task_frame_ray_directions = ctx.add_task(
         'frame_frame_ray_directions', job,
-        deps=[task_frame_contact_areas, task_frame_coordinates],
+        deps=[task_frame_contact_areas, task_frame_tibia_coordinates],
     )
 
     task_frame_femur_cart_thickness = ctx.add_task('frame_femur_cart_thickness', calc_frame_cart_thickness,
@@ -232,11 +235,13 @@ def main():
 
     task_frame_femur_cart_thickness_origins_projected = ctx.add_task(
         'frame_femur_cart_thickness_origins_projected', project_cart_thickness_origins,
-        deps=[task_frame_femur_cart_thickness_origins, task_frame_coordinates],
+        deps=[task_frame_femur_cart_thickness_origins,
+              task_frame_tibia_coordinates],
     )
     task_frame_tibia_cart_thickness_origins_projected = ctx.add_task(
         'frame_tibia_cart_thickness_origins_projected', project_cart_thickness_origins,
-        deps=[task_frame_tibia_cart_thickness_origins, task_frame_coordinates],
+        deps=[task_frame_tibia_cart_thickness_origins,
+              task_frame_tibia_coordinates],
     )
     task_plot_femur_cart_thickness = ctx.add_task(
         'plot_femur_cart_thickness',
@@ -290,7 +295,7 @@ def main():
                                         deps=[
                                             task_frame_contact_components,
                                             task_frame_contact_component_depth_maps,
-                                            task_frame_coordinates
+                                            task_frame_tibia_coordinates
                                         ])
     task_dof_data = ctx.add_task('dof_data', calc_dof,
                                  deps=[
@@ -308,7 +313,7 @@ def main():
                                                  deps=[
                                                      task_contact_depth_map_extent,
                                                      task_contact_depth_map_background_tibia,
-                                                     task_frame_coordinates,
+                                                     task_frame_tibia_coordinates,
                                                      task_frame_bone_distance_map_origins,
                                                      task_frame_bone_distance_map_distances,
                                                      task_frame_contact_components,
@@ -420,7 +425,8 @@ def gen_contact_depth_map_background(contact_depth_map_extent, tibia_mesh, tibia
     meshes = [tm]
     if tibia_cart_mesh:
         tcm = tibia_cart_mesh.copy()
-        tcm.visual.vertex_colors = hex_to_rgba1(config.DEPTH_MAP_CARTILAGE_COLOR_TIBIA)
+        tcm.visual.vertex_colors = hex_to_rgba1(
+            config.DEPTH_MAP_CARTILAGE_COLOR_TIBIA)
         meshes.append(tcm)
     bg = gen_orthographic_photo(
         meshes, tibia_coord, res, largest_side, largest_side, np.array([
@@ -443,7 +449,7 @@ def plot_contact_depth_maps(extent,
                             frame_contact_component_depth_map_depths):
     n = len(frame_bone_distance_map_distances)
     res = get_heatmap_resolution()
-    grid_x, grid_y = np.mgrid[extent[0]:extent[1]:res[0] * 1j, extent[2]:extent[3]:res[1] * 1j]
+    grid_x, grid_y = np.mgrid[extent[0]:extent[1]                              :res[0] * 1j, extent[2]:extent[3]:res[1] * 1j]
     distance_threshold = 10
     vmin, vmax = 1e9, -1e9
     exclude_frames = set()
@@ -554,7 +560,8 @@ def gen_bone_animation(bone_animation_frames):
         config.OUTPUT_DIRECTORY, 'animation.gif'))
 
 
-def gen_bone_animation_frames(frame_femur_meshes, frame_tibia_meshes, frame_coordinates,
+def gen_bone_animation_frames(frame_femur_meshes, frame_tibia_meshes,
+                              frame_femur_coords, frame_tibia_coords,
                               frame_femur_cart_meshes=None, frame_tibia_cart_meshes=None):
     num_frames = len(frame_femur_meshes)
     assert num_frames == len(frame_tibia_meshes)
@@ -581,6 +588,16 @@ def gen_bone_animation_frames(frame_femur_meshes, frame_tibia_meshes, frame_coor
             tcm.visual.vertex_colors = hex_to_rgba1(
                 config.ANIMATION_CARTILAGE_COLOR_TIBIA)
             meshes.extend([fcm, tcm])
+
+        if config.ANIMATION_SHOW_BONE_COORDINATE:
+            for component in WORLD_AXIS:
+                for coord in [
+                    frame_femur_coords[i],
+                    frame_tibia_coords[i],
+                ]:
+                    c = component.copy()
+                    c.apply_transform(coord.t.mat_homo)
+                    meshes.append(c)
 
         rot_90 = np.array([
             [0, 1, 0, 0],
@@ -618,8 +635,9 @@ def gen_bone_animation_frames(frame_femur_meshes, frame_tibia_meshes, frame_coor
             raise NotImplementedError(
                 f'Unknown Animation Camera Direction: {config.ANIMATION_DIRECTION}')
 
+
         image: Image.Image = gen_orthographic_photo(
-            meshes, frame_coordinates[i], config.ANIMATION_RESOLUTION, 128, 128, camera_pose, config.ANIMATION_LIGHT_INTENSITY)
+            meshes, frame_tibia_coords[i], config.ANIMATION_RESOLUTION, 128, 128, camera_pose, config.ANIMATION_LIGHT_INTENSITY)
 
         image_path = os.path.join(
             get_frame_output_directory(i), f'animation_frame_{i}.png')
@@ -716,7 +734,7 @@ def calc_dof(original_coordinates_femur, original_coordinates_tibia,
     y_tx, y_ty, y_tz = [], [], []
     y_rx, y_ry, y_rz = [], [], []
 
-    def extract_planar_rotations_optimized(rotation_matrix):
+    def extract_planar_rotations(rotation_matrix):
         axis = np.array([[1, 0, 0],
                          [0, 1, 0],
                          [0, 0, 1]])
@@ -750,7 +768,7 @@ def calc_dof(original_coordinates_femur, original_coordinates_tibia,
         y_tx.append(tx), y_ty.append(ty), y_tz.append(tz)
         # rot = Rotation.from_matrix(r.mat_r)
         # rx, ry, rz = rot.as_euler('xyz', degrees=True)
-        rx, ry, rz = extract_planar_rotations_optimized(r.mat_r)
+        rx, ry, rz = extract_planar_rotations(r.mat_r)
         y_rx.append(rx), y_ry.append(ry), y_rz.append(rz)
 
     return np.array(y_tx), np.array(y_ty), np.array(y_tz), np.array(y_rx), np.array(y_ry), np.array(y_rz)
@@ -1086,7 +1104,7 @@ def plot_frame_cart_thickness_heatmap(extent, background, frame_cart_thickness_m
 
     n = len(frame_cart_thickness_maps)
     res = get_heatmap_resolution()
-    grid_x, grid_y = np.mgrid[extent[0]:extent[1]:res[0] * 1j, extent[2]:extent[3]:res[1] * 1j]
+    grid_x, grid_y = np.mgrid[extent[0]:extent[1]                              :res[0] * 1j, extent[2]:extent[3]:res[1] * 1j]
 
     vmin, vmax = 1e9, -1e9
     for frame_index in range(n):

@@ -19,6 +19,16 @@ class MomentDataFormat(Enum):
     JSON = 'json'
 
 
+class DofRotationMethod(Enum):
+    EULER_XYZ = 'euler_xyz'
+    EULER_YZX = 'euler_yzx'
+    EULER_ZXY = 'euler_zxy'
+    EULER_XZY = 'euler_xzy'
+    EULER_ZYX = 'euler_zyx'
+    EULER_YXZ = 'euler_yxz'
+    PROJECTION = 'projection'  # 以绕 X 轴旋转为例，先选取股骨的 Y 轴基向量，再投影到胫骨坐标系 YZ 平面上，再计算相对胫骨的 Y 基向量旋转了多少
+
+
 OUTPUT_DIRECTORY = 'output'
 
 # tasks
@@ -43,7 +53,7 @@ ANIMATION_BONE_COLOR_TIBIA = '#ffffff'
 ANIMATION_CARTILAGE_COLOR_FEMUR = '#00e5ff'
 ANIMATION_CARTILAGE_COLOR_TIBIA = '#8800ff'
 ANIMATION_RESOLUTION = (1000, 1000)
-ANIMATION_DIRECTION: AnimationCameraDirection = AnimationCameraDirection.FIX_TIBIA_M2L
+ANIMATION_DIRECTION: AnimationCameraDirection = AnimationCameraDirection.FIX_TIBIA_FRONT
 ANIMATION_LIGHT_INTENSITY = 3.0
 ANIMATION_SHOW_BONE_COORDINATE = True  # RED: x-axis; GREEN: y-axis; BLUE: z-axis
 
@@ -51,10 +61,11 @@ DEPTH_MAP_BONE_COLOR_FEMUR = '#ffffff'
 DEPTH_MAP_BONE_COLOR_TIBIA = '#ffffff'
 DEPTH_MAP_CARTILAGE_COLOR_FEMUR = '#1d16a1'
 DEPTH_MAP_CARTILAGE_COLOR_TIBIA = '#1d16a1'
+DEPTH_MAP_RESOLUTION = (1000, 1000)
 DEPTH_MAP_LIGHT_INTENSITY = 3.0
+DEPTH_DIRECTION: DepthDirection = DepthDirection.CONTACT_PLANE
 
-DEPTH_DIRECTION = DepthDirection.CONTACT_PLANE
-
+DOF_ROTATION_METHOD: DofRotationMethod = DofRotationMethod.PROJECTION
 
 # WIP TASKS, DO NOT ENABLE
 Y_ROTATE_EXP = False

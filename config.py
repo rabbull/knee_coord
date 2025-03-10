@@ -29,6 +29,10 @@ class DofRotationMethod(Enum):
     PROJECTION = 'projection'  # 以绕 X 轴旋转为例，先选取股骨的 Y 轴基向量，再投影到胫骨坐标系 YZ 平面上，再计算相对胫骨的 Y 基向量旋转了多少
 
 
+class BaseBone(Enum):
+    FEMUR = 'femur'
+    TIBIA = 'tibia'
+
 OUTPUT_DIRECTORY = 'output'
 
 # tasks
@@ -64,6 +68,8 @@ DEPTH_MAP_CARTILAGE_COLOR_TIBIA = '#1d16a1'
 DEPTH_MAP_RESOLUTION = (1000, 1000)
 DEPTH_MAP_LIGHT_INTENSITY = 3.0
 DEPTH_DIRECTION: DepthDirection = DepthDirection.CONTACT_PLANE
+DEPTH_BASE_BONE: BaseBone = BaseBone.FEMUR
+DEPTH_MAP_MARK_MAX = True
 
 DOF_ROTATION_METHOD: DofRotationMethod = DofRotationMethod.PROJECTION
 

@@ -116,4 +116,32 @@ def main2():
 
 
 if __name__ == '__main__':
-    main2()
+    rot_90 = np.array([
+        [0, 1, 0, 0],
+        [-1, 0, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1]
+    ])
+    rot_90_rev = np.linalg.inv(rot_90)
+    pose_x = np.array([
+        [0, 0, -1, -1000],
+        [0, -1, 0, 0],
+        [-1, 0, 0, 0],
+        [0, 0, 0, 1]
+    ]) @ rot_90
+    pose_x_rev = np.array([
+        [0, 0, 1, 1000],
+        [0, -1, 0, 0],
+        [1, 0, 0, 0],
+        [0, 0, 0, 1]
+    ]) @ rot_90_rev
+    pose_front = np.array([
+        [-1, 0, 0, 0],
+        [0, 0, 1, 1000],
+        [0, 1, 0, 0],
+        [0, 0, 0, 1]
+    ]) @ rot_90 @ rot_90
+
+    print(pose_x)
+    print(pose_x_rev)
+    print(pose_front)

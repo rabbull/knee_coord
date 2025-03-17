@@ -27,6 +27,7 @@ class DofRotationMethod(Enum):
     EULER_ZYX = 'euler_zyx'
     EULER_YXZ = 'euler_yxz'
     PROJECTION = 'projection'  # 以绕 X 轴旋转为例，先选取股骨的 Y 轴基向量，再投影到胫骨坐标系 YZ 平面上，再计算相对胫骨的 Y 基向量旋转了多少
+    JCS = 'jcs'
 
 
 class BaseBone(Enum):
@@ -37,10 +38,10 @@ OUTPUT_DIRECTORY = 'output'
 
 # tasks
 GENERATE_ANIMATION = True
-GENERATE_DEPTH_CURVE = True
-GENERATE_DEPTH_MAP = True
+GENERATE_DEPTH_CURVE = False
+GENERATE_DEPTH_MAP = False
 GENERATE_DOF_CURVES = True
-INTERPOLATE_DOF = True
+INTERPOLATE_DOF = False
 
 FEMUR_MODEL_FILE = 'acc_task/Femur.stl'
 FEMUR_CARTILAGE_MODEL_FILE = 'acc_task/Femur_Cart_Smooth.stl'
@@ -49,7 +50,7 @@ TIBIA_CARTILAGE_MODEL_FILE = 'acc_task/Tibia_Cart_Smooth.stl'
 FEATURE_POINT_FILE = 'acc_task/Coordination_Pt.txt'
 
 MOVEMENT_DATA_FORMAT = MomentDataFormat.CSV
-MOVEMENT_DATA_FILE = 'model_0220/Bill_Kinematic_RK.csv'
+MOVEMENT_DATA_FILE = 'model_0313/First_Profile.csv'
 
 # color picker: https://g.co/kgs/Te8C3VZ
 ANIMATION_BONE_COLOR_FEMUR = '#ffffff'
@@ -57,7 +58,7 @@ ANIMATION_BONE_COLOR_TIBIA = '#ffffff'
 ANIMATION_CARTILAGE_COLOR_FEMUR = '#00e5ff'
 ANIMATION_CARTILAGE_COLOR_TIBIA = '#8800ff'
 ANIMATION_RESOLUTION = (1000, 1000)
-ANIMATION_DIRECTION: AnimationCameraDirection = AnimationCameraDirection.FIX_TIBIA_FRONT
+ANIMATION_DIRECTION: AnimationCameraDirection = AnimationCameraDirection.FIX_TIBIA_M2L
 ANIMATION_LIGHT_INTENSITY = 3.0
 ANIMATION_SHOW_BONE_COORDINATE = True  # RED: x-axis; GREEN: y-axis; BLUE: z-axis
 
@@ -68,10 +69,10 @@ DEPTH_MAP_CARTILAGE_COLOR_TIBIA = '#1d16a1'
 DEPTH_MAP_RESOLUTION = (1000, 1000)
 DEPTH_MAP_LIGHT_INTENSITY = 3.0
 DEPTH_DIRECTION: DepthDirection = DepthDirection.CONTACT_PLANE
-DEPTH_BASE_BONE: BaseBone = BaseBone.FEMUR
+DEPTH_BASE_BONE: BaseBone = BaseBone.TIBIA
 DEPTH_MAP_MARK_MAX = True
 
-DOF_ROTATION_METHOD: DofRotationMethod = DofRotationMethod.PROJECTION
+DOF_ROTATION_METHOD: DofRotationMethod = DofRotationMethod.JCS
 
 # WIP TASKS, DO NOT ENABLE
 Y_ROTATE_EXP = False

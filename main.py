@@ -738,6 +738,55 @@ def gen_orthographic_photo(meshes: list[trimesh.Trimesh], coord: BoneCoordinatio
     return img
 
 
+def to_jcs(T_femur_in_tibia, side='left'):
+    R = T_femur_in_tibia[:3, :3]
+    p = T_femur_in_tibia[:3, 3]
+    e3_t = np.array([0., 0., 1.])
+    e3_in_femur = R @ e3_t
+    e1_f = np.array([1., 0., 0.])
+    e2_in_femur = np.cross(e3_in_femur, e1_f)
+    norm_e2 = np.linalg.norm(e2_in_femur)
+    if norm_e2 < 1e-9:
+        e2_in_femur = np.zeros(3)
+    else:
+        e2_in_femur /= norm_e2
+    dot13 = np.dot(e1_f, e3_in_femur)
+    dot13 = np.clip(dot13, -1.0, 1.0)
+    beta = np.arccos(dot13)
+    if side.lower() == 'right':
+        adduction = beta - np.pi / 2
+    else:
+        adduction = np.pi / 2 - beta
+    fwd_femur = np.array([0., 1., 0.])
+    cos_alpha = np.dot(e2_in_femur, fwd_femur)
+    cos_alpha = np.clip(cos_alpha, -1.0, 1.0)
+    alpha_raw = np.arccos(cos_alpha)
+    cross_dir = np.cross(fwd_femur, e2_in_femur)
+    sign_test = np.dot(cross_dir, e1_f)
+    alpha = alpha_raw if sign_test >= 0 else -alpha_raw
+    j_t_in_f = R @ np.array([0., 1., 0.])
+    cos_gamma = np.dot(j_t_in_f, e2_in_femur)
+    cos_gamma = np.clip(cos_gamma, -1.0, 1.0)
+    gamma_raw = np.arccos(cos_gamma)
+    cross_test = np.cross(e2_in_femur, j_t_in_f)
+    sign_test2 = np.dot(cross_test, e3_in_femur)
+    gamma = gamma_raw if sign_test2 >= 0 else -gamma_raw
+    R_T = R.T
+    p_in_femur = - R_T @ p
+    q1 = np.dot(p_in_femur, e1_f)
+    q2 = np.dot(p_in_femur, e2_in_femur)
+    q3 = - np.dot(p_in_femur, e3_in_femur)
+
+    return {
+        'adduction': adduction,
+        'flexion': alpha,
+        'tibial_rotation': gamma,
+        'q1': q1,
+        'q2': q2,
+        'q3': q3
+    }
+
+
 def calc_dof(original_coordinates_femur, original_coordinates_tibia,
              frame_transformations_femur, frame_transformations_tibia):
     y_tx, y_ty, y_tz = [], [], []
@@ -749,18 +798,24 @@ def calc_dof(original_coordinates_femur, original_coordinates_tibia,
         fc.t.apply_transformation(ft)
         tc.t.apply_transformation(tt)
         r = fc.t.relative_to(tc.t)
-        tx, ty, tz = r.mat_t
-        y_tx.append(tx), y_ty.append(ty), y_tz.append(tz)
-        if config.DOF_ROTATION_METHOD.value.startswith('euler'):
-            rot = Rotation.from_matrix(r.mat_r)
-            rx, ry, rz = rot.as_euler(
-                config.DOF_ROTATION_METHOD.value[-3:], degrees=True)
-        elif config.DOF_ROTATION_METHOD == config.DofRotationMethod.PROJECTION:
-            rx, ry, rz = extract_rotation_projection(
-                fc.t.mat_homo, tc.t.mat_homo)
+
+        if config.DOF_ROTATION_METHOD == config.DofRotationMethod.JCS:
+            transform: dict[str, any] = to_jcs(r.mat_homo, side='left')
+            tx, ty, tz = transform['q1'], transform['q2'], transform['q3']
+            ry = transform['adduction'] / np.pi * 180
+            rx = transform['flexion'] / np.pi * 180
+            rz = transform['tibial_rotation'] / np.pi * 180
         else:
-            raise NotImplementedError(
-                f'unkown rotation method: {config.DOF_ROTATION_METHOD}')
+            tx, ty, tz = r.mat_t
+            if config.DOF_ROTATION_METHOD.value.startswith('euler'):
+                rot = Rotation.from_matrix(r.mat_r)
+                rx, ry, rz = rot.as_euler(config.DOF_ROTATION_METHOD.value[-3:], degrees=True)
+            elif config.DOF_ROTATION_METHOD == config.DofRotationMethod.PROJECTION:
+                rx, ry, rz = extract_rotation_projection(fc.t.mat_homo, tc.t.mat_homo)
+            else:
+                raise NotImplementedError(f'unkown rotation method: {config.DOF_ROTATION_METHOD}')
+
+        y_tx.append(tx), y_ty.append(ty), y_tz.append(tz)
         y_rx.append(rx), y_ry.append(ry), y_rz.append(rz)
 
     return np.array(y_tx), np.array(y_ty), np.array(y_tz), np.array(y_rx), np.array(y_ry), np.array(y_rz)
@@ -788,6 +843,8 @@ def plot_dof_curves(dof_data):
                  '-'.join(list(config.DOF_ROTATION_METHOD.value[-3:]))
     elif config.DOF_ROTATION_METHOD == config.DofRotationMethod.PROJECTION:
         method = 'Projection'
+    elif config.DOF_ROTATION_METHOD == config.DofRotationMethod.JCS:
+        method = 'JCS'
     else:
         raise NotImplementedError(
             f'unkown rotation method: {config.DOF_ROTATION_METHOD}')
@@ -1228,12 +1285,12 @@ def extract_rotation_projection(H_F, H_T):
     eT_y = np.array([0, 1, 0], dtype=float)
     eT_z = np.array([0, 0, 1], dtype=float)
 
-    #  绕 X => 用 F系的 Y=(0,1,0), 先转到 T系 => 投影YZ => 和 eT_y 投影做夹角
+    #  绕 X => 用 F 系的 Y=(0,1,0), 先转到 T系 => 投影YZ => 和 eT_y 投影做夹角
     vF_y = np.array([0, 1, 0], dtype=float)
     vT_y = R_TF @ vF_y  # F 的 Y 向量在 T 系下的表达
     angle_x = project_and_signed_angle(vT_y, eT_y, axis_idx=0)
 
-    #  绕 Y => 用 F系的 Z=(0,0,1), => 投影XZ => 和 eT_z 做夹角
+    #  绕 Y => 用 F 系的 Z=(0,0,1), => 投影 XZ => 和 eT_z 做夹角
     vF_z = np.array([0, 0, 1], dtype=float)
     vT_z = R_TF @ vF_z
     angle_y = project_and_signed_angle(vT_z, eT_z, axis_idx=1)

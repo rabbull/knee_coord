@@ -38,5 +38,7 @@ class Context(object):
             deps = []
             for dep in self._tasks[name].deps:
                 deps.append(self.get(dep))
+            print(f'Executing task {task.name}...')
             task.result = task.job(*deps)
+            print(f'Task {task.name} finished.')
         return task.result

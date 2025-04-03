@@ -51,10 +51,10 @@ class KneeSide(Enum):
 OUTPUT_DIRECTORY = 'output'
 
 # tasks
-GENERATE_ANIMATION = True
-GENERATE_DEPTH_CURVE = False
-GENERATE_DEPTH_MAP = False
-GENERATE_DOF_CURVES = True
+GENERATE_ANIMATION = False
+GENERATE_DEPTH_CURVE = True
+GENERATE_DEPTH_MAP = True
+GENERATE_DOF_CURVES = False
 SMOOTH_ANIMATION = True
 
 KNEE_SIDE = KneeSide.LEFT
@@ -63,7 +63,7 @@ FEMUR_CARTILAGE_MODEL_FILE = 'acc_task/Femur_Cart_Smooth.stl'
 TIBIA_MODEL_FILE = 'acc_task/Tibia.stl'
 TIBIA_CARTILAGE_MODEL_FILE = 'acc_task/Tibia_Cart_Smooth.stl'
 FEATURE_POINT_FILE = 'acc_task/Coordination_Pt.txt'
-IGNORE_CARTILAGE = False
+IGNORE_CARTILAGE = True
 
 MOVEMENT_DATA_FORMAT = MomentDataFormat.CSV
 MOVEMENT_DATA_FILE = 'model_0313/First_Profile.csv'
@@ -89,6 +89,7 @@ DEPTH_MAP_LIGHT_INTENSITY = 3.0
 DEPTH_DIRECTION: DepthDirection = DepthDirection.CONTACT_PLANE
 DEPTH_BASE_BONE: BaseBone = BaseBone.TIBIA
 DEPTH_MAP_MARK_MAX = True
+DEPTH_MAP_DEPTH_THRESHOLD = 100
 
 DOF_ROTATION_METHOD: DofRotationMethod = DofRotationMethod.JCS
 DOF_BASE_BONE: BaseBone = BaseBone.FEMUR

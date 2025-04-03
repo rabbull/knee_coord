@@ -459,7 +459,7 @@ def plot_contact_depth_maps(extent,
     n = len(frame_bone_distance_map_distances)
     res = config.DEPTH_MAP_RESOLUTION
     grid_x, grid_y = np.mgrid[extent[0]:extent[1]:res[0] * 1j, extent[2]:extent[3]:res[1] * 1j]
-    distance_threshold = 10
+    distance_threshold = config.DEPTH_MAP_DEPTH_THRESHOLD
     vmin, vmax = 1e9, -1e9
     exclude_frames = set()
     for frame_index in range(n):
@@ -484,8 +484,8 @@ def plot_contact_depth_maps(extent,
 
     frames = []
     for frame_index in tqdm.tqdm(range(n)):
-        if frame_index in exclude_frames:
-            continue
+        # if frame_index in exclude_frames:
+        #     continue
         coord = frame_coordinates[frame_index]
         origins = frame_bone_distance_map_origins[frame_index].astype(Real)
         distances = frame_bone_distance_map_distances[frame_index]
@@ -529,11 +529,14 @@ def plot_contact_depth_maps(extent,
                     and g_depth[i] is not None and len(g_depth[i]) > 0):
                 g_z.append(
                     griddata(g_origins_2d[i], g_depth[i], (grid_x, grid_y), method='linear'))
+
         if len(g_z) == 2:
             z = np.where(np.isnan(g_z[0]), g_z[1], g_z[0])
             z = np.where(np.isnan(z), g_z[0], z)
-        else:
+        elif len(g_z) == 1:
             z = g_z[0]
+        else:
+            z = np.full(grid_x.shape, np.nan)
 
         # depth map
         fig, ax = plt.subplots()
@@ -1344,56 +1347,6 @@ def smooth_transformations(raw: List[Transformation3D]) -> List[Transformation3D
         yi = interpolator(xi)
         dofi.append(yi)
     yi_tx, yi_ty, yi_tz, yi_rx, yi_ry, yi_rz = dofi
-
-    # ---------------------------
-    # 绘制插值前后的平移数据对比图
-    plt.figure(figsize=(10, 4))
-    plt.subplot(1, 3, 1)
-    plt.plot(x, y_tx, 'o', label='Raw tx')
-    plt.plot(xi, yi_tx, '-', label='Interp tx')
-    plt.xlabel('Time')
-    plt.ylabel('Translation X')
-    plt.legend()
-    plt.subplot(1, 3, 2)
-    plt.plot(x, y_ty, 'o', label='Raw ty')
-    plt.plot(xi, yi_ty, '-', label='Interp ty')
-    plt.xlabel('Time')
-    plt.ylabel('Translation Y')
-    plt.legend()
-    plt.subplot(1, 3, 3)
-    plt.plot(x, y_tz, 'o', label='Raw tz')
-    plt.plot(xi, yi_tz, '-', label='Interp tz')
-    plt.xlabel('Time')
-    plt.ylabel('Translation Z')
-    plt.legend()
-    plt.suptitle('Translation interpolation')
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-
-    # ---------------------------
-    # 绘制插值前后的旋转数据（欧拉角）对比图
-    plt.figure(figsize=(10, 4))
-    plt.subplot(1, 3, 1)
-    plt.plot(x, y_rx, 'o', label='Raw rx')
-    plt.plot(xi, yi_rx, '-', label='Interp rx')
-    plt.xlabel('Time')
-    plt.ylabel('Rotation X (rad)')
-    plt.legend()
-    plt.subplot(1, 3, 2)
-    plt.plot(x, y_ry, 'o', label='Raw ry')
-    plt.plot(xi, yi_ry, '-', label='Interp ry')
-    plt.xlabel('Time')
-    plt.ylabel('Rotation Y (rad)')
-    plt.legend()
-    plt.subplot(1, 3, 3)
-    plt.plot(x, y_rz, 'o', label='Raw rz')
-    plt.plot(xi, yi_rz, '-', label='Interp rz')
-    plt.xlabel('Time')
-    plt.ylabel('Rotation Z (rad)')
-    plt.legend()
-    plt.suptitle('Rotation (Euler angles) interpolation')
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-
-    plt.show()
 
     smoothed = []
     for i in range(len(xi)):

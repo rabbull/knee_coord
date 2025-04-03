@@ -1,5 +1,7 @@
 from enum import Enum
 
+from scipy.interpolate import CubicSpline, Akima1DInterpolator, PchipInterpolator
+
 
 class AnimationCameraDirection(Enum):
     AUTO = 'auto'  # TODO
@@ -30,9 +32,21 @@ class DofRotationMethod(Enum):
     JCS = 'jcs'
 
 
+class InterpolateMethod(Enum):
+    CubicSpline = 'Cubic Spline', CubicSpline
+    Akima = 'Akima', Akima1DInterpolator
+    Pchip = 'Pchip', PchipInterpolator
+
+
 class BaseBone(Enum):
     FEMUR = 'femur'
     TIBIA = 'tibia'
+
+
+class KneeSide(Enum):
+    LEFT = 'left'
+    RIGHT = 'right'
+
 
 OUTPUT_DIRECTORY = 'output'
 
@@ -41,16 +55,20 @@ GENERATE_ANIMATION = True
 GENERATE_DEPTH_CURVE = False
 GENERATE_DEPTH_MAP = False
 GENERATE_DOF_CURVES = True
-INTERPOLATE_DOF = False
+SMOOTH_ANIMATION = True
 
+KNEE_SIDE = KneeSide.LEFT
 FEMUR_MODEL_FILE = 'acc_task/Femur.stl'
 FEMUR_CARTILAGE_MODEL_FILE = 'acc_task/Femur_Cart_Smooth.stl'
 TIBIA_MODEL_FILE = 'acc_task/Tibia.stl'
 TIBIA_CARTILAGE_MODEL_FILE = 'acc_task/Tibia_Cart_Smooth.stl'
 FEATURE_POINT_FILE = 'acc_task/Coordination_Pt.txt'
+IGNORE_CARTILAGE = False
 
 MOVEMENT_DATA_FORMAT = MomentDataFormat.CSV
 MOVEMENT_DATA_FILE = 'model_0313/First_Profile.csv'
+MOVEMENT_SMOOTH = True
+MOVEMENT_INTERPOLATE_METHOD: InterpolateMethod = InterpolateMethod.CubicSpline
 
 # color picker: https://g.co/kgs/Te8C3VZ
 ANIMATION_BONE_COLOR_FEMUR = '#ffffff'
@@ -73,6 +91,7 @@ DEPTH_BASE_BONE: BaseBone = BaseBone.TIBIA
 DEPTH_MAP_MARK_MAX = True
 
 DOF_ROTATION_METHOD: DofRotationMethod = DofRotationMethod.JCS
+DOF_BASE_BONE: BaseBone = BaseBone.FEMUR
 
 # WIP TASKS, DO NOT ENABLE
 Y_ROTATE_EXP = False

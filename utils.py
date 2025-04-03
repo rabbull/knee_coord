@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Optional, Union, Sequence
 
 import numpy as np
 import trimesh
@@ -289,3 +289,16 @@ def my_axis(
 
     # append the sphere and three cylinders
     return [axis_origin, x_axis, y_axis, z_axis]
+
+def take_kth(k: int):
+    def res(s: Sequence):
+        return s[k]
+
+    return res
+
+
+def list_take_kth(k: int):
+    def res(s: list[Sequence]):
+        return [e[k] if e is not None else None for e in s] if s is not None else None
+
+    return res

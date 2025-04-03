@@ -23,13 +23,11 @@ class Context(object):
     def add_task(self, name: str, job: Callable[..., Any], deps: Optional[list[str | _Task]] = None):
         if name in self._tasks:
             raise ValueError(f"Task {name} already registered.")
-        if not deps:
-            deps = []
-        deps = [dep.name if isinstance(dep, Context._Task) else dep for dep in deps]
-        for dep in deps:
+        dep_names = [dep.name if isinstance(dep, Context._Task) else dep for dep in deps] if deps is not None else []
+        for dep in dep_names:
             if dep not in self._tasks:
                 raise ValueError(f"Dependency {dep} does not exist.")
-        self._tasks[name] = Context._Task(self, name, job, deps)
+        self._tasks[name] = Context._Task(self, name, job, dep_names)
         return self._tasks[name]
 
     def get(self, name: str):

@@ -1,8 +1,9 @@
 import copy
+import functools
 import json
 import logging
 import os
-from typing import Self, List, Tuple
+from typing import Any, Self, List, Tuple
 import csv
 from datetime import datetime
 
@@ -13,7 +14,7 @@ import tqdm
 from PIL import Image
 from matplotlib import pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
-from scipy.interpolate import griddata, CubicSpline, Akima1DInterpolator, PchipInterpolator
+from scipy.interpolate import griddata
 from scipy.linalg import svd
 from sklearn.cluster import KMeans
 
@@ -23,7 +24,7 @@ from utils import *
 
 trimesh.util.attach_to_log(level=logging.INFO)
 
-WORLD_AXIS = my_axis(axis_length=200, axis_radius=2)
+WORLD_AXIS = my_axis(axis_length=1000, axis_radius=2)
 
 depth_cmap = LinearSegmentedColormap.from_list("depth_map", ['blue', 'green', 'yellow', 'red'])
 
@@ -41,22 +42,28 @@ class BoneCoordination:
     def from_feature_points(cls, side, medial_point, lateral_point, proximal_point, distal_point, extra=None) -> Self:
         self = cls()
 
-        if side == config.KneeSide.RIGHT:
-            raise NotImplementedError
+        match side:
+            case config.KneeSide.LEFT:
+                left_point, right_point = lateral_point, medial_point
+            case config.KneeSide.RIGHT:
+                left_point, right_point = medial_point, lateral_point
+            case _:
+                raise NotImplementedError
+        del medial_point, lateral_point
 
-        self._origin = (lateral_point + medial_point) / 2
+        self._origin = (left_point + right_point) / 2
         self._t.set_translation(self._origin)
 
-        raw_x = lateral_point - medial_point
+        raw_x = left_point - right_point
         unit_x = normalize(raw_x)
-        raw_z = proximal_point - distal_point
+        raw_z = distal_point - proximal_point
         raw_z_proj_x = np.dot(raw_z, unit_x) * unit_x
         fixed_z = raw_z - raw_z_proj_x
         unit_z = normalize(fixed_z)
         raw_y = np.cross(unit_z, unit_x)
         unit_y = normalize(raw_y)
-        self._t.set_rotation(Rotation.from_matrix(
-            np.column_stack((unit_x, unit_y, unit_z))))
+        mat_r = np.column_stack((unit_x, unit_y, unit_z))
+        self._t.set_rotation(Rotation.from_matrix(mat_r))
 
         self._extra = extra if extra else {}
         return self
@@ -107,7 +114,7 @@ def main():
                      deps=[task_all_extended_meshes])
 
     task_original_coordinates = \
-        ctx.add_task('original_coordinates', lambda: load_coord_from_file(config.FEATURE_POINT_FILE))
+        ctx.add_task('original_coordinates', functools.partial(load_coord_from_file, config.FEATURE_POINT_FILE))
     task_original_coordinates_femur = \
         ctx.add_task('original_coordinates_femur', take_kth(0), deps=[task_original_coordinates])
     task_original_coordinates_tibia = \
@@ -242,17 +249,17 @@ def main():
     task_frame_tibia_cart_thickness = ctx.add_task('frame_tibia_cart_thickness', calc_frame_cart_thickness,
                                                    deps=[task_frame_ray_directions, task_frame_tibia_cart_meshes])
     task_frame_femur_cart_thickness_origins = \
-        ctx.add_task('frame_femur_cart_thickness_origins', list_take_kth(
-            0), deps=[task_frame_femur_cart_thickness])
+        ctx.add_task('frame_femur_cart_thickness_origins',
+                     list_take_kth(0), deps=[task_frame_femur_cart_thickness])
     task_frame_femur_cart_thickness_map = \
-        ctx.add_task('frame_femur_cart_thickness_map', list_take_kth(
-            1), deps=[task_frame_femur_cart_thickness])
+        ctx.add_task('frame_femur_cart_thickness_map',
+                     list_take_kth(1), deps=[task_frame_femur_cart_thickness])
     task_frame_tibia_cart_thickness_origins = \
-        ctx.add_task('frame_tibia_cart_thickness_origins', list_take_kth(
-            0), deps=[task_frame_tibia_cart_thickness])
+        ctx.add_task('frame_tibia_cart_thickness_origins',
+                     list_take_kth(0), deps=[task_frame_tibia_cart_thickness])
     task_frame_tibia_cart_thickness_map = \
-        ctx.add_task('frame_tibia_cart_thickness_map', list_take_kth(
-            1), deps=[task_frame_tibia_cart_thickness])
+        ctx.add_task('frame_tibia_cart_thickness_map',
+                     list_take_kth(1), deps=[task_frame_tibia_cart_thickness])
 
     task_frame_femur_cart_thickness_origins_projected = ctx.add_task(
         'frame_femur_cart_thickness_origins_projected', project_cart_thickness_origins,
@@ -320,15 +327,26 @@ def main():
     task_dof_rotation_method = ctx.add_task('task_dof_rotation_method', lambda: config.DOF_ROTATION_METHOD)
     task_dof_rotation_method_xyz = \
         ctx.add_task('task_dof_rotation_method_xyz', lambda: config.DofRotationMethod.EULER_XYZ)
-    task_dof_data = ctx.add_task('dof_data', calc_dof, deps=[
+    task_dof_data_smoothed = ctx.add_task(
+        'dof_data_smoothed',
+        lambda *args: calc_dof(*args) if config.MOVEMENT_SMOOTH else None,
+        deps=[
+            task_original_coordinates_femur,
+            task_original_coordinates_tibia,
+            task_frame_bone_transformations_femur_smoothed,
+            task_frame_bone_transformations_tibia_smoothed,
+            task_dof_rotation_method,
+        ])
+    task_dof_data_raw = ctx.add_task('dof_data_raw', calc_dof, deps=[
         task_original_coordinates_femur,
         task_original_coordinates_tibia,
-        task_frame_bone_transformations_femur,
-        task_frame_bone_transformations_tibia,
-        task_dof_rotation_method,
-    ])
-    task_dump_dof = ctx.add_task('dump_dof', dump_dof, deps=[task_dof_data])
-    task_plot_dof_curves = ctx.add_task('plot_dof_curves', plot_dof_curves, deps=[task_dof_data])
+        task_frame_bone_transformations_femur_raw,
+        task_frame_bone_transformations_tibia_raw,
+        task_dof_rotation_method, ])
+    task_dump_dof = ctx.add_task('dump_dof', dump_dof,
+                                 deps=[task_dof_data_raw, task_dof_data_smoothed])
+    task_plot_dof_curves = ctx.add_task('plot_dof_curves', plot_dof_curves,
+                                        deps=[task_dof_data_raw, task_dof_data_smoothed])
 
     task_contact_depth_map_frames = ctx.add_task('frame_contact_depth_map_frames', plot_contact_depth_maps,
                                                  deps=[
@@ -413,8 +431,6 @@ def gen_contact_depth_map_extent(extent):
 
 
 def gen_contact_depth_map_background(contact_depth_map_extent, tibia_mesh, tibia_coord, tibia_cart_mesh=None):
-    extent = contact_depth_map_extent
-    largest_side = extent[1]
     res = config.DEPTH_MAP_RESOLUTION
     tm = tibia_mesh.copy()
     tm.visual.vertex_colors = hex_to_rgba1(config.DEPTH_MAP_BONE_COLOR_TIBIA)
@@ -424,14 +440,14 @@ def gen_contact_depth_map_background(contact_depth_map_extent, tibia_mesh, tibia
         tcm.visual.vertex_colors = hex_to_rgba1(
             config.DEPTH_MAP_CARTILAGE_COLOR_TIBIA)
         meshes.append(tcm)
-    if config.DEPTH_BASE_BONE == config.BaseBone.FEMUR:
+    if config.DEPTH_BASE_BONE == config.BaseBone.TIBIA:
         pose = np.array([
             [1, 0, 0, 0],
             [0, 1, 0, 0],
             [0, 0, 1, 1000],
             [0, 0, 0, 1],
         ])
-    elif config.DEPTH_BASE_BONE == config.BaseBone.TIBIA:
+    elif config.DEPTH_BASE_BONE == config.BaseBone.FEMUR:
         pose = np.array([
             [-1, 0, 0, 0],
             [0, 1, 0, 0],
@@ -441,11 +457,12 @@ def gen_contact_depth_map_background(contact_depth_map_extent, tibia_mesh, tibia
     else:
         raise NotImplementedError(f'Unknown base bone: {config.DEPTH_BASE_BONE}')
 
-    bg = gen_orthographic_photo(
-        meshes, tibia_coord, res, largest_side, largest_side, pose, config.DEPTH_MAP_LIGHT_INTENSITY)
-    if config.DEPTH_BASE_BONE == config.BaseBone.TIBIA:
-        bg = bg.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-    return bg
+    background = gen_orthographic_photo(meshes, tibia_coord, res,
+                                        contact_depth_map_extent[1], contact_depth_map_extent[1],
+                                        pose, config.DEPTH_MAP_LIGHT_INTENSITY)
+    if config.DEPTH_BASE_BONE == config.BaseBone.FEMUR:
+        background = background.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    return background
 
 
 def plot_contact_depth_maps(extent,
@@ -502,6 +519,8 @@ def plot_contact_depth_maps(extent,
                     frame_contact_component_depth_map_origins[frame_index],
                     frame_contact_component_depth_map_depths[frame_index]
             ):
+                if len(c_origins) or len(c_depth) == 0:
+                    continue
                 c_vertices = c_mesh.vertices.astype(Real)
                 if config.DEPTH_MAP_MARK_MAX:
                     deepest.append(c_origins[np.argmax(c_depth)])
@@ -514,9 +533,6 @@ def plot_contact_depth_maps(extent,
                 origins = np.vstack([origins, c_origins])
                 depths = np.concatenate([depths, c_depth])
 
-        # labels = KMeans(n_clusters=2, random_state=42).fit_predict(origins)
-        # groups = [labels == j for j in range(2)]
-
         groups = [coord.project(origins)[:, 0] >= 0,
                   coord.project(origins)[:, 0] < 0]
 
@@ -525,10 +541,9 @@ def plot_contact_depth_maps(extent,
         g_depth = [depths[grp_mask] for grp_mask in groups]
         g_z = []
         for i in range(2):
-            if (g_origins_2d[i] is not None and len(g_origins_2d[i]) > 0
-                    and g_depth[i] is not None and len(g_depth[i]) > 0):
-                g_z.append(
-                    griddata(g_origins_2d[i], g_depth[i], (grid_x, grid_y), method='linear'))
+            if (g_origins_2d[i] is not None and len(g_origins_2d[i]) > 1
+                    and g_depth[i] is not None and len(g_depth[i]) > 1):
+                g_z.append(griddata(g_origins_2d[i], g_depth[i], (grid_x, grid_y), method='linear'))
 
         if len(g_z) == 2:
             z = np.where(np.isnan(g_z[0]), g_z[1], g_z[0])
@@ -555,6 +570,14 @@ def plot_contact_depth_maps(extent,
             deepest = np.array(deepest)
             deepest_2d = coord.project(deepest)[:, :2]
             ax.scatter(deepest_2d[:, 0], deepest_2d[:, 1], marker='+', s=100, color='turquoise')
+
+        for label in ax.get_yticklabels():
+            if label.get_text() == '0':
+                label.set_text('')
+        for label in ax.get_xticklabels():
+            if label.get_text() == '0':
+                x, y = label.get_position()
+                label.set_position((x + 1, y))
         ax.invert_xaxis()
         ax.spines['left'].set_position('center')
         ax.spines['bottom'].set_position('center')
@@ -568,6 +591,7 @@ def plot_contact_depth_maps(extent,
             os.makedirs(directory)
         fig.savefig(image_path)
         frames.append(Image.open(image_path))
+        plt.close(fig)
     return frames
 
 
@@ -587,70 +611,70 @@ def gen_bone_animation_frames(frame_femur_meshes, frame_tibia_meshes,
         assert num_frames == len(frame_tibia_cart_meshes)
 
     images = []
-    for i in range(num_frames):
+    for i in tqdm.tqdm(range(num_frames)):
         fm = frame_femur_meshes[i].copy()
         tm = frame_tibia_meshes[i].copy()
-        fm.visual.vertex_colors = hex_to_rgba1(
-            config.ANIMATION_BONE_COLOR_FEMUR)
-        tm.visual.vertex_colors = hex_to_rgba1(
-            config.ANIMATION_BONE_COLOR_TIBIA)
+        fm.visual.vertex_colors = hex_to_rgba1(config.ANIMATION_BONE_COLOR_FEMUR)
+        tm.visual.vertex_colors = hex_to_rgba1(config.ANIMATION_BONE_COLOR_TIBIA)
         meshes = [fm, tm]
 
         if (frame_femur_cart_meshes and frame_tibia_cart_meshes and
                 frame_femur_cart_meshes[i] and frame_tibia_cart_meshes[i]):
             fcm = frame_femur_cart_meshes[i].copy()
             tcm = frame_tibia_cart_meshes[i].copy()
-            fcm.visual.vertex_colors = hex_to_rgba1(
-                config.ANIMATION_CARTILAGE_COLOR_FEMUR)
-            tcm.visual.vertex_colors = hex_to_rgba1(
-                config.ANIMATION_CARTILAGE_COLOR_TIBIA)
+            fcm.visual.vertex_colors = hex_to_rgba1(config.ANIMATION_CARTILAGE_COLOR_FEMUR)
+            tcm.visual.vertex_colors = hex_to_rgba1(config.ANIMATION_CARTILAGE_COLOR_TIBIA)
             meshes.extend([fcm, tcm])
 
         if config.ANIMATION_SHOW_BONE_COORDINATE:
-            for component in WORLD_AXIS:
-                for coord in [
-                    frame_femur_coords[i],
-                    frame_tibia_coords[i],
-                ]:
-                    c = component.copy()
-                    c.apply_transform(coord.t.mat_homo)
-                    meshes.append(c)
+            for anatomy_id, coord in enumerate([
+                frame_femur_coords[i], frame_tibia_coords[i],
+            ]):
+                meshes.extend(my_axis(axis_length=200, axis_radius=2, transform=coord.t.mat_homo))
 
         pose_x = np.array([
-            [0, 0, -1, -1000],
-            [1, 0, 0, 0],
-            [0, -1, 0, 0],
-            [0, 0, 0, 1],
-        ])
-        pose_x_rev = np.array([
-            [0, 0, 1, 1000.],
-            [-1, 0, 0, 0.],
-            [0, -1, 0, 0.],
+            [0, 0, 1, 500.],
+            [1, 0, 0, 0.],
+            [0, 1, 0, 0.],
             [0, 0, 0, 1.],
-        ])
-        pose_front = np.array([
+        ], dtype=Real)
+        pose_xi = np.array([
+            [0, 0, -1, -500],
+            [-1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 0, 1]
+        ], dtype=Real)
+        pose_front_y = np.array([
             [1, 0, 0, 0],
-            [0, 0, 1, 1000],
+            [0, 0, -1, -500],
+            [0, 1, 0, 0],
+            [0, 0, 0, 1],
+        ], dtype=Real)
+        pose_front_yi = np.array([
+            [-1, 0, 0, 0],
+            [0, 0, -1, -500],
             [0, -1, 0, 0],
             [0, 0, 0, 1],
-        ])
+        ], dtype=Real)
 
-        if config.ANIMATION_DIRECTION == config.AnimationCameraDirection.FIX_TIBIA_FRONT:
-            camera_pose = pose_front
-        elif config.ANIMATION_DIRECTION == config.AnimationCameraDirection.FIX_TIBIA_L2M:
-            camera_pose = pose_x
-        elif config.ANIMATION_DIRECTION == config.AnimationCameraDirection.FIX_TIBIA_M2L:
-            camera_pose = pose_x_rev
-        else:
-            raise NotImplementedError(
-                f'Unknown Animation Camera Direction: {config.ANIMATION_DIRECTION}')
+        camera_poses = {
+            config.KneeSide.LEFT: {
+                config.AnimationCameraDirection.FIX_TIBIA_FRONT: pose_front_y,
+                config.AnimationCameraDirection.FIX_TIBIA_L2M: pose_xi,
+                config.AnimationCameraDirection.FIX_TIBIA_M2L: pose_x,
+            },
+            config.KneeSide.RIGHT: {
+                config.AnimationCameraDirection.FIX_TIBIA_FRONT: pose_front_yi,
+                config.AnimationCameraDirection.FIX_TIBIA_L2M: pose_x,
+                config.AnimationCameraDirection.FIX_TIBIA_M2L: pose_xi,
+            }
+        }
+        camera_pose = camera_poses[config.KNEE_SIDE][config.ANIMATION_DIRECTION]
 
-        image: Image.Image = gen_orthographic_photo(
-            meshes, frame_tibia_coords[i], config.ANIMATION_RESOLUTION, 128, 128, camera_pose,
-            config.ANIMATION_LIGHT_INTENSITY)
+        image = gen_orthographic_photo(meshes, frame_tibia_coords[i], config.ANIMATION_RESOLUTION,
+                                       128, 128, camera_pose, config.ANIMATION_LIGHT_INTENSITY)
 
-        image_path = os.path.join(
-            get_frame_output_directory(i), f'animation_frame_{i}.png')
+        image_path = os.path.join(get_frame_output_directory(i), f'animation_frame_{i}.png')
         directory = os.path.dirname(image_path)
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -703,10 +727,17 @@ def load_frame_bone_coordinates_csv() -> list[tuple[BoneCoordination, BoneCoordi
                 femur_coords[int(row['measurement_id'])] = coord
             else:
                 tibia_coords[int(row['measurement_id'])] = coord
-    return list(zip(
+
+    coords = list(zip(
         [femur_coords[key] for key in sorted(femur_coords.keys())],
         [tibia_coords[key] for key in sorted(tibia_coords.keys())],
     ))
+    if config.MOVEMENT_PICK_FRAMES is not None:
+        res = []
+        for index in config.MOVEMENT_PICK_FRAMES:
+            res.append(coords[index])
+        coords = res
+    return coords
 
 
 def calc_extent(extended_tibia_mesh, tibia_coord, padding=5):
@@ -717,16 +748,20 @@ def calc_extent(extended_tibia_mesh, tibia_coord, padding=5):
     return [l - padding, r + padding, b - padding, t + padding]
 
 
-def gen_orthographic_photo(meshes: list[trimesh.Trimesh], coord: BoneCoordination, res: Tuple[int, int], xmag: float,
-                           ymag: float, camera_pose: np.array, light_intensity=3.0) -> Image.Image:
+def gen_orthographic_photo(meshes: list[trimesh.Trimesh], coord: BoneCoordination, res: Tuple[int, int],
+                           xmag: float, ymag: float, camera_pose: np.array, light_intensity=3.0) -> Image.Image:
     pyr_scene = pyr.Scene()
+    # scene = trimesh.Scene()
     for mesh in meshes:
         mesh = mesh.copy()
         mesh.vertices = coord.project(mesh.vertices)
+        # scene.add_geometry(mesh)
         pyr_mesh = pyr.Mesh.from_trimesh(mesh)
         pyr_scene.add(pyr_mesh)
     pyr_camera = pyr.OrthographicCamera(xmag, ymag, znear=0.1, zfar=1e5)
     pyr_scene.add(pyr_camera, pose=camera_pose)
+    # scene.add_geometry(my_axis(transform=camera_pose, axis_length=50, axis_radius=4))
+    # scene.show()
     pyr_light = pyr.DirectionalLight(color=np.ones(3), intensity=light_intensity)
     pyr_scene.add(pyr_light, pose=camera_pose)
     renderer = pyr.OffscreenRenderer(
@@ -736,44 +771,43 @@ def gen_orthographic_photo(meshes: list[trimesh.Trimesh], coord: BoneCoordinatio
     return img
 
 
-def to_jcs(homo, side='left'):
-    R = homo[:3, :3]
+def to_jcs(homo, side: config.KneeSide = config.KneeSide.LEFT):
+    r = homo[:3, :3]
     p = homo[:3, 3]
     e3_t = np.array([0., 0., 1.])
-    e3_in_femur = R @ e3_t
+    e3_f = r @ e3_t
     e1_f = np.array([1., 0., 0.])
-    e2_in_femur = np.cross(e3_in_femur, e1_f)
-    norm_e2 = np.linalg.norm(e2_in_femur)
+    e2_f = np.cross(e3_f, e1_f)
+    norm_e2 = np.linalg.norm(e2_f)
     if norm_e2 < 1e-9:
-        e2_in_femur = np.zeros(3)
+        e2_f = np.zeros(3)
     else:
-        e2_in_femur /= norm_e2
-    dot13 = np.dot(e1_f, e3_in_femur)
+        e2_f /= norm_e2
+    dot13 = np.dot(e1_f, e3_f)
     dot13 = np.clip(dot13, -1.0, 1.0)
     beta = np.arccos(dot13)
-    if side.lower() == 'right':
+    if side == config.KneeSide.RIGHT:
         adduction = beta - np.pi / 2
     else:
         adduction = np.pi / 2 - beta
     fwd_femur = np.array([0., 1., 0.])
-    cos_alpha = np.dot(e2_in_femur, fwd_femur)
+    cos_alpha = np.dot(e2_f, fwd_femur)
     cos_alpha = np.clip(cos_alpha, -1.0, 1.0)
     alpha_raw = np.arccos(cos_alpha)
-    cross_dir = np.cross(fwd_femur, e2_in_femur)
+    cross_dir = np.cross(fwd_femur, e2_f)
     sign_test = np.dot(cross_dir, e1_f)
     alpha = alpha_raw if sign_test >= 0 else -alpha_raw
-    j_t_in_f = R @ np.array([0., 1., 0.])
-    cos_gamma = np.dot(j_t_in_f, e2_in_femur)
+    j_t_in_f = r @ np.array([0., 1., 0.])
+    cos_gamma = np.dot(j_t_in_f, e2_f)
     cos_gamma = np.clip(cos_gamma, -1.0, 1.0)
     gamma_raw = np.arccos(cos_gamma)
-    cross_test = np.cross(e2_in_femur, j_t_in_f)
-    sign_test2 = np.dot(cross_test, e3_in_femur)
+    cross_test = np.cross(e2_f, j_t_in_f)
+    sign_test2 = np.dot(cross_test, e3_f)
     gamma = gamma_raw if sign_test2 >= 0 else -gamma_raw
-    R_T = R.T
-    p_in_femur = - R_T @ p
-    q1 = np.dot(p_in_femur, e1_f)
-    q2 = np.dot(p_in_femur, e2_in_femur)
-    q3 = - np.dot(p_in_femur, e3_in_femur)
+    p_f = - r.T @ p
+    q1 = np.dot(p_f, e1_f)
+    q2 = np.dot(p_f, e2_f)
+    q3 = - np.dot(p_f, e3_f)
 
     return {
         'adduction': adduction,
@@ -804,7 +838,7 @@ def calc_dof(original_coordinates_femur, original_coordinates_tibia,
             raise NotImplementedError(f'unknown base bone: {config.DOF_BASE_BONE}')
 
         if config.DOF_ROTATION_METHOD == config.DofRotationMethod.JCS:
-            transform: dict[str, any] = to_jcs(r.mat_homo, side='left')
+            transform: dict[str, Any] = to_jcs(r.mat_homo, side='left')
             tx, ty, tz = transform['q1'], transform['q2'], transform['q3']
             ry = transform['adduction'] / np.pi * 180
             rx = transform['flexion'] / np.pi * 180
@@ -825,12 +859,17 @@ def calc_dof(original_coordinates_femur, original_coordinates_tibia,
     return np.array(y_tx), np.array(y_ty), np.array(y_tz), np.array(y_rx), np.array(y_ry), np.array(y_rz)
 
 
-def dump_dof(dof_data):
+def dump_dof(raw, smoothed):
+    do_dump_dof(raw, "dof_raw.csv")
+    if smoothed is not None:
+        do_dump_dof(smoothed, "dof_smoothed.csv")
+
+def do_dump_dof(dof_data, filename):
     y_tx, y_ty, y_tz, y_rx, y_ry, y_rz = dof_data
     num_frames = len(y_tx)
     x = np.arange(1, num_frames + 1)
 
-    csv_path = os.path.join(config.OUTPUT_DIRECTORY, 'dof_raw.csv')
+    csv_path = os.path.join(config.OUTPUT_DIRECTORY, filename)
     with open(csv_path, mode='w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(['Frame', 'Translation X', 'Translation Y', 'Translation Z',
@@ -848,22 +887,41 @@ def dump_dof(dof_data):
             ])
 
 
-def plot_dof_curves(dof_data):
-    y_tx, y_ty, y_tz, y_rx, y_ry, y_rz = dof_data
+def plot_dof_curves(dof_data_raw, dof_data_smoothed):
+    y_tx, y_ty, y_tz, y_rx, y_ry, y_rz = dof_data_raw
+    if dof_data_smoothed is not None:
+        ys_tx, ys_ty, ys_tz, ys_rx, ys_ry, ys_rz = dof_data_smoothed
+    raw_line = 'x-' if dof_data_smoothed is None else 'x'
+    smoothed_line = '-'
+
     x = np.arange(len(y_tx)) + 1
+    if dof_data_smoothed is not None:
+        xs = np.arange(len(ys_tx)) + 1
+        x = np.linspace(xs[0], xs[-1], len(x))
 
     fig, ax = plt.subplots()
-    ax.plot(x, y_tx, 'x-')
+    ax.plot(x, y_tx, raw_line)
+    if dof_data_smoothed is not None:
+        ax.plot(xs, ys_tx, smoothed_line)
     ax.set_title('Translation X')
     fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'dof_curve_tx.png'))
+    plt.close(fig)
+
     fig, ax = plt.subplots()
-    ax.plot(x, y_ty, 'x-')
+    ax.plot(x, y_ty, raw_line)
+    if dof_data_smoothed is not None:
+        ax.plot(xs, ys_ty, smoothed_line)
     ax.set_title('Translation Y')
     fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'dof_curve_ty.png'))
+    plt.close(fig)
+
     fig, ax = plt.subplots()
-    ax.plot(x, y_tz, 'x-')
+    ax.plot(x, y_tz, raw_line)
+    if dof_data_smoothed is not None:
+        ax.plot(xs, ys_tz, smoothed_line)
     ax.set_title('Translation Z')
     fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'dof_curve_tz.png'))
+    plt.close(fig)
 
     if config.DOF_ROTATION_METHOD.value.startswith('euler'):
         method = 'Euler ' + \
@@ -875,18 +933,30 @@ def plot_dof_curves(dof_data):
     else:
         raise NotImplementedError(
             f'unkown rotation method: {config.DOF_ROTATION_METHOD}')
+
     fig, ax = plt.subplots()
-    ax.plot(x, y_rx, 'x-')
+    ax.plot(x, y_rx, raw_line)
+    if dof_data_smoothed is not None:
+        ax.plot(xs, ys_rx, smoothed_line)
     ax.set_title(f'X Rotation ({method})')
     fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'dof_curve_rx.png'))
+    plt.close(fig)
+
     fig, ax = plt.subplots()
-    ax.plot(x, y_ry, 'x-')
+    ax.plot(x, y_ry, raw_line)
+    if dof_data_smoothed is not None:
+        ax.plot(xs, ys_ry, smoothed_line)
     ax.set_title(f'Y Rotation ({method})')
     fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'dof_curve_ry.png'))
+    plt.close(fig)
+
     fig, ax = plt.subplots()
-    ax.plot(x, y_rz, 'x-')
+    ax.plot(x, y_rz, raw_line)
+    if dof_data_smoothed is not None:
+        ax.plot(xs, ys_rz, smoothed_line)
     ax.set_title(f'Z Rotation ({method})')
     fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'dof_curve_rz.png'))
+    plt.close(fig)
 
 
 def smooth_dof(dof_data):
@@ -923,6 +993,7 @@ def smooth_dof(dof_data):
         ax.legend()
         path = os.path.join(config.OUTPUT_DIRECTORY, f'dof_curve_interpolated_{dof_name}.png')
         fig.savefig(path)
+        plt.close(fig)
 
     path = os.path.join(config.OUTPUT_DIRECTORY, 'dof_curve_interpolated.mat')
     scipy.io.savemat(path, dof_interpolate_data)
@@ -1002,6 +1073,8 @@ def plot_max_depth_curve(frame_contact_components, contact_component_depth_maps,
         components = frame_contact_components[i]
         depth_maps = contact_component_depth_maps[i]
         for c, (_, depths) in zip(components, depth_maps):
+            if depths is None or depths.shape[0] == 0:
+                continue
             if coordinate.project(c.centroid)[0] < 0:
                 mdm = max(mdm, np.max(depths))
             else:
@@ -1013,13 +1086,14 @@ def plot_max_depth_curve(frame_contact_components, contact_component_depth_maps,
     fig, ax = plt.subplots()
     ax.plot(np.arange(n), mds)
     fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, 'max_depth_curve.png'))
+    plt.close(fig)
 
     fig, ax = plt.subplots()
     ax.plot(np.arange(n), mdms, label='Medial')
     ax.plot(np.arange(n), mdls, label='Lateral')
     ax.legend()
-    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY,
-                             'max_depth_curve_split.png'))
+    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, 'max_depth_curve_split.png'))
+    plt.close(fig)
 
 
 def gen_animation(frames, output_path, fps: float = 2.5):
@@ -1065,7 +1139,7 @@ def load_coord_from_file(path):
 
 def calc_contact_depth_map(frame_ray_directions, frame_contact_components):
     res = []
-    for direction, components in zip(frame_ray_directions, frame_contact_components):
+    for direction, components in tqdm.tqdm(zip(frame_ray_directions, frame_contact_components)):
         if config.DEPTH_BASE_BONE == config.BaseBone.FEMUR:
             direction = -direction
         depth_maps = []
@@ -1107,7 +1181,7 @@ def do_calc_bone_distance_map(target, base, v):
 
 def prepare_rays_from_model(model, direction, reverse=False):
     ud = normalize(direction)
-    mask = np.dot(model.vertex_normals, ud) > 0
+    mask = np.dot(model.vertex_normals, ud) < 0
     origins = model.vertices[mask]
     eps = 1e-4
     if reverse:
@@ -1208,8 +1282,7 @@ def plot_frame_cart_thickness_heatmap(extent, background, frame_cart_thickness_m
         for i in range(num_components):
             component_origins = origins[labels == i]
             component_thickness_map = thickness_map[labels == i]
-            component_z = griddata(
-                component_origins, component_thickness_map, (grid_x, grid_y), method='linear')
+            component_z = griddata(component_origins, component_thickness_map, (grid_x, grid_y), method='linear')
             im = ax.contourf(
                 grid_x, grid_y, component_z,
                 levels=np.arange(vmin, vmax, 1),
@@ -1230,6 +1303,7 @@ def plot_frame_cart_thickness_heatmap(extent, background, frame_cart_thickness_m
             os.makedirs(directory)
         fig.savefig(image_path)
         frames.append(Image.open(image_path))
+        plt.close(fig)
     return frames
 
 

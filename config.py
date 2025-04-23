@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Optional
 
 from scipy.interpolate import CubicSpline, Akima1DInterpolator, PchipInterpolator
 
@@ -51,11 +52,10 @@ class KneeSide(Enum):
 OUTPUT_DIRECTORY = 'output'
 
 # tasks
-GENERATE_ANIMATION = False
-GENERATE_DEPTH_CURVE = True
+GENERATE_ANIMATION = True
+GENERATE_DEPTH_CURVE = False
 GENERATE_DEPTH_MAP = True
 GENERATE_DOF_CURVES = False
-SMOOTH_ANIMATION = True
 
 KNEE_SIDE = KneeSide.LEFT
 FEMUR_MODEL_FILE = 'acc_task/Femur.stl'
@@ -63,11 +63,12 @@ FEMUR_CARTILAGE_MODEL_FILE = 'acc_task/Femur_Cart_Smooth.stl'
 TIBIA_MODEL_FILE = 'acc_task/Tibia.stl'
 TIBIA_CARTILAGE_MODEL_FILE = 'acc_task/Tibia_Cart_Smooth.stl'
 FEATURE_POINT_FILE = 'acc_task/Coordination_Pt.txt'
-IGNORE_CARTILAGE = True
+IGNORE_CARTILAGE = False
 
 MOVEMENT_DATA_FORMAT = MomentDataFormat.CSV
-MOVEMENT_DATA_FILE = 'model_0313/First_Profile.csv'
-MOVEMENT_SMOOTH = True
+MOVEMENT_DATA_FILE = 'acc_task/sical_test_rm.csv'
+MOVEMENT_SMOOTH = False
+MOVEMENT_PICK_FRAMES: Optional[list[int]] = None
 MOVEMENT_INTERPOLATE_METHOD: InterpolateMethod = InterpolateMethod.CubicSpline
 
 # color picker: https://g.co/kgs/Te8C3VZ
@@ -76,7 +77,7 @@ ANIMATION_BONE_COLOR_TIBIA = '#ffffff'
 ANIMATION_CARTILAGE_COLOR_FEMUR = '#00e5ff'
 ANIMATION_CARTILAGE_COLOR_TIBIA = '#8800ff'
 ANIMATION_RESOLUTION = (1000, 1000)
-ANIMATION_DIRECTION: AnimationCameraDirection = AnimationCameraDirection.FIX_TIBIA_M2L
+ANIMATION_DIRECTION = AnimationCameraDirection.FIX_TIBIA_FRONT
 ANIMATION_LIGHT_INTENSITY = 3.0
 ANIMATION_SHOW_BONE_COORDINATE = True  # RED: x-axis; GREEN: y-axis; BLUE: z-axis
 
@@ -86,10 +87,10 @@ DEPTH_MAP_CARTILAGE_COLOR_FEMUR = '#1d16a1'
 DEPTH_MAP_CARTILAGE_COLOR_TIBIA = '#1d16a1'
 DEPTH_MAP_RESOLUTION = (1000, 1000)
 DEPTH_MAP_LIGHT_INTENSITY = 3.0
-DEPTH_DIRECTION: DepthDirection = DepthDirection.CONTACT_PLANE
+DEPTH_DIRECTION: DepthDirection = DepthDirection.Z_AXIS
 DEPTH_BASE_BONE: BaseBone = BaseBone.TIBIA
 DEPTH_MAP_MARK_MAX = True
-DEPTH_MAP_DEPTH_THRESHOLD = 100
+DEPTH_MAP_DEPTH_THRESHOLD = 10
 
 DOF_ROTATION_METHOD: DofRotationMethod = DofRotationMethod.JCS
 DOF_BASE_BONE: BaseBone = BaseBone.FEMUR

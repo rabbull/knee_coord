@@ -9,7 +9,7 @@ def main():
     camera_pose = np.array([
         [1, 0, 0, 0],
         [0, 1, 0, 0],
-        [0, 0, 1, 200],
+        [0, 0, 1, 500],
         [0, 0, 0, 1],
     ], dtype=Real)
 
@@ -17,9 +17,9 @@ def main():
     uy = [0, 1, 0]
     uz = [0, 0, 1]
 
-    ry = rotation_matrix(np.pi / 2, uy)
-    rx = rotation_matrix(np.pi / 2, ux)
-    camera_pose = rx @ ry @ camera_pose
+    ry = rotation_matrix(np.pi, uy)
+    rx = rotation_matrix(-np.pi / 2, ux)
+    camera_pose = ry @ rx @ camera_pose
     print(camera_pose.astype(np.int64))
 
     print("Camera Position:", camera_pose[:3, 3])

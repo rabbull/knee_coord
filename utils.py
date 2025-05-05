@@ -1,4 +1,4 @@
-from typing import Optional, Union, Sequence
+from typing import Optional, Sequence
 
 import numpy as np
 import trimesh
@@ -7,20 +7,11 @@ from trimesh.creation import cylinder, icosphere
 import trimesh.transformations as tf
 from numpy.typing import ArrayLike
 from trimesh import Trimesh
-from nptyping import Shape
-from nptyping.ndarray import NDArray
 from scipy.spatial.transform import Rotation
 import trimesh.scene
 import trimesh.scene.transforms
 
 Real: type = np.float64
-RotationMatrix: type = NDArray[Shape['3, 3'], Real]
-TranslationMatrix: type = NDArray[Shape['3'], Real]
-HomogeneousMatrix: type = NDArray[Shape['4, 4'], Real]
-Quaternion: type = NDArray[Shape['4'], Real]
-EulerAngles: type = NDArray[Shape['3'], Real]
-Point3D: type = NDArray[Shape['3'], Real]
-PointList3D: type = NDArray[Shape['*, 3'], Real]
 
 X = np.array([1, 0, 0], dtype=np.float64)
 Y = np.array([0, 1, 0], dtype=np.float64)
@@ -39,43 +30,38 @@ AXIS_Z = trimesh.creation.box(extents=[1, 1, 20], transform=_translate(2, 10.))
 AXES = [AXIS_X, AXIS_Y, AXIS_Z]
 
 
-def normalize(x: NDArray[Shape['*, ...'], Real]):
+def normalize(x):
     return x / np.linalg.norm(x)
 
 
 class Transformation3D(object):
-    def __init__(self, h: HomogeneousMatrix = None):
+    def __init__(self, h = None):
         if h is None:
             h = np.eye(4)
         self._h = h
 
-    def set_translation(self, translation: TranslationMatrix) -> 'Transformation3D':
-        if isinstance(translation, TranslationMatrix):  # noqa
-            self._h[:3, 3] = translation
-        else:
-            raise ValueError
+    def set_translation(self, translation) -> 'Transformation3D':
+        self._h[:3, 3] = translation
         return self
 
-    def set_rotation(self, rotation: Union[Rotation, RotationMatrix]) -> 'Transformation3D':
+    def set_rotation(self, rotation) -> 'Transformation3D':
         if isinstance(rotation, Rotation):
             r = rotation.as_matrix()
-        elif isinstance(rotation, RotationMatrix):  # noqa
-            r = rotation
         else:
-            raise ValueError
+            r = rotation
         self._h[:3, :3] = r
         return self
 
     @property
-    def mat_r(self) -> RotationMatrix:
+    def mat_r(self):
         return self._h[:3, :3]
 
     @property
-    def mat_t(self) -> TranslationMatrix:
+    def mat_t(self):
         return self._h[:3, 3]
 
     @property
-    def mat_homo(self) -> HomogeneousMatrix:
+    def mat_homo(self):
         return self._h
 
     @property
@@ -91,34 +77,33 @@ class Transformation3D(object):
         return self.mat_r[:3, 2]
 
     @property
-    def quaternion(self) -> Quaternion:
+    def quaternion(self):
         return Rotation.from_matrix(self.mat_r).as_quat()
 
     @property
-    def euler_angles(self, seq='zyx') -> EulerAngles:
+    def euler_angles(self, seq='zyx'):
         return Rotation.from_matrix(self.mat_r).as_euler(seq, degrees=False)
 
-    def apply_rotation(self, rotation: Union[Rotation, RotationMatrix]) -> 'Transformation3D':
+    def apply_rotation(self, rotation) -> 'Transformation3D':
         return self.apply_transformation(Transformation3D().set_rotation(rotation))
 
-    def apply_translation(self, translation: TranslationMatrix) -> 'Transformation3D':
+    def apply_translation(self, translation) -> 'Transformation3D':
         return self.apply_transformation(Transformation3D().set_translation(translation))
 
     def apply_transformation(self, rhs: 'Transformation3D') -> 'Transformation3D':
         self._h = rhs._h @ self._h
         return self
 
-    def transform(self, x: Union[PointList3D, Point3D]) -> Union[PointList3D, Point3D]:
-        if isinstance(x, Point3D):  # noqa
+    def transform(self, x):
+        x = np.asarray(x)
+        if x.ndim == 1 and x.shape[0] == 3:
             x_hom = np.hstack([x, 1])
             x_transformed = self._h @ x_hom
             return x_transformed[:3]
-
-        elif isinstance(x, PointList3D):  # noqa
+        elif x.ndim == 2 and x.shape[1] == 3:
             x_hom = np.hstack([x, np.ones((x.shape[0], 1))])
             x_transformed = (self._h @ x_hom.T).T
             return x_transformed[:, :3]
-
         else:
             raise ValueError
 

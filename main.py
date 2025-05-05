@@ -42,6 +42,7 @@ class BoneCoordination:
     def from_feature_points(cls, side, medial_point, lateral_point, proximal_point, distal_point, extra=None) -> Self:
         self = cls()
 
+        print(lateral_point, medial_point)
         match side:
             case config.KneeSide.LEFT:
                 left_point, right_point = lateral_point, medial_point
@@ -54,7 +55,7 @@ class BoneCoordination:
         self._origin = (left_point + right_point) / 2
         self._t.set_translation(self._origin)
 
-        raw_x = left_point - right_point
+        raw_x = right_point - left_point
         unit_x = normalize(raw_x)
         raw_z = distal_point - proximal_point
         raw_z_proj_x = np.dot(raw_z, unit_x) * unit_x
@@ -62,6 +63,7 @@ class BoneCoordination:
         unit_z = normalize(fixed_z)
         raw_y = np.cross(unit_z, unit_x)
         unit_y = normalize(raw_y)
+        print((unit_x, unit_y, unit_z))
         mat_r = np.column_stack((unit_x, unit_y, unit_z))
         self._t.set_rotation(Rotation.from_matrix(mat_r))
 
@@ -644,27 +646,21 @@ def gen_bone_animation_frames(frame_femur_meshes, frame_tibia_meshes,
             [0, 1, 0, 0],
             [0, 0, 0, 1]
         ], dtype=Real)
-        pose_front_y = np.array([
-            [1, 0, 0, 0],
-            [0, 0, -1, -500],
-            [0, 1, 0, 0],
-            [0, 0, 0, 1],
-        ], dtype=Real)
-        pose_front_yi = np.array([
+        pose_y = np.array([
             [-1, 0, 0, 0],
-            [0, 0, -1, -500],
-            [0, -1, 0, 0],
+            [0, 0, 1, 500],
+            [0, 1, 0, 0],
             [0, 0, 0, 1],
         ], dtype=Real)
 
         camera_poses = {
             config.KneeSide.LEFT: {
-                config.AnimationCameraDirection.FIX_TIBIA_FRONT: pose_front_y,
+                config.AnimationCameraDirection.FIX_TIBIA_FRONT: pose_y,
                 config.AnimationCameraDirection.FIX_TIBIA_L2M: pose_xi,
                 config.AnimationCameraDirection.FIX_TIBIA_M2L: pose_x,
             },
             config.KneeSide.RIGHT: {
-                config.AnimationCameraDirection.FIX_TIBIA_FRONT: pose_front_yi,
+                config.AnimationCameraDirection.FIX_TIBIA_FRONT: pose_y,
                 config.AnimationCameraDirection.FIX_TIBIA_L2M: pose_x,
                 config.AnimationCameraDirection.FIX_TIBIA_M2L: pose_xi,
             }

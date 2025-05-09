@@ -1,7 +1,9 @@
-trimesh[recommend]
+trimesh[easy]
 matplotlib
 numpy
 scipy
 scikit-learn
 pyrender
 tqdm
+av
+pandas

@@ -1,0 +1,9 @@
+Femur_Lateral -31.557,24.226,-13.466
+Femur_Medial 40.144,-16.235,-19.691
+Femur_Proximal -1.152,3.170,100.121
+Femur_Distal -3.832,-3.668,39.188
+
+Tibia_Lateral -19.520,13.021,40.037
+Tibia_Medial 18.652,-19.972,38.582
+Tibia_Proximal -2.441,-1.566,-25.179
+Tibia_Distal 11.383,15.751,-87.797

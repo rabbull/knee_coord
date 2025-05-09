@@ -7,7 +7,6 @@ from typing import Any, Self, List, Tuple
 import csv
 from datetime import datetime
 
-import numpy as np
 import scipy.interpolate
 import pyrender as pyr
 import tqdm
@@ -16,7 +15,10 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.interpolate import griddata
 from scipy.linalg import svd
+from scipy.spatial import cKDTree
 from sklearn.cluster import KMeans
+import av
+import pandas as pd
 
 import config
 import task
@@ -42,7 +44,6 @@ class BoneCoordination:
     def from_feature_points(cls, side, medial_point, lateral_point, proximal_point, distal_point, extra=None) -> Self:
         self = cls()
 
-        print(lateral_point, medial_point)
         match side:
             case config.KneeSide.LEFT:
                 left_point, right_point = lateral_point, medial_point
@@ -63,7 +64,6 @@ class BoneCoordination:
         unit_z = normalize(fixed_z)
         raw_y = np.cross(unit_z, unit_x)
         unit_y = normalize(raw_y)
-        print((unit_x, unit_y, unit_z))
         mat_r = np.column_stack((unit_x, unit_y, unit_z))
         self._t.set_rotation(Rotation.from_matrix(mat_r))
 
@@ -222,7 +222,10 @@ def main():
         task_frame_femur_coordinates, task_frame_tibia_coordinates,
         task_frame_femur_cart_meshes, task_frame_tibia_cart_meshes,
     ])
-    task_bone_animation = ctx.add_task('bone_animation', gen_bone_animation, deps=[task_bone_animation_frames])
+    task_movement_animation = ctx.add_task('movement_animation',
+                                           functools.partial(gen_animation, name='animation',
+                                                             duration=config.ANIMATION_DURATION),
+                                           deps=[task_bone_animation_frames])
 
     task_frame_contact_areas = ctx.add_task('frame_contact_areas', get_contact_area,
                                             deps=[
@@ -298,11 +301,9 @@ def main():
                            task_frame_tibia_meshes,
                            task_frame_ray_directions])
     task_frame_bone_distance_map_origins = \
-        ctx.add_task('frame_bone_distance_map_origins', list_take_kth(
-            0), deps=[task_frame_bone_distance_maps])
+        ctx.add_task('frame_bone_distance_map_origins', list_take_kth(0), deps=[task_frame_bone_distance_maps])
     task_frame_bone_distance_map_distances = \
-        ctx.add_task('frame_bone_distance_map_distances',
-                     list_take_kth(1), deps=[task_frame_bone_distance_maps])
+        ctx.add_task('frame_bone_distance_map_distances', list_take_kth(1), deps=[task_frame_bone_distance_maps])
 
     task_frame_contact_components = \
         ctx.add_task('frame_contact_components',
@@ -363,13 +364,12 @@ def main():
                                                  ])
     task_contact_depth_map_animation = \
         ctx.add_task('frame_contact_depth_map_animation',
-                     lambda fs: gen_animation(fs, os.path.join(
-                         config.OUTPUT_DIRECTORY, 'depth_map_animation.gif')),
+                     functools.partial(gen_animation, name='depth_map_animation', duration=config.DEPTH_MAP_DURATION),
                      deps=[task_contact_depth_map_frames])
     # if config.Y_ROTATE_EXP:
     #     task_exp_y_rotation()
     if config.GENERATE_ANIMATION:
-        task_bone_animation()
+        task_movement_animation()
     if config.GENERATE_DEPTH_CURVE:
         task_max_depth_curve()
     if config.GENERATE_DEPTH_MAP:
@@ -478,28 +478,30 @@ def plot_contact_depth_maps(extent,
     n = len(frame_bone_distance_map_distances)
     res = config.DEPTH_MAP_RESOLUTION
     grid_x, grid_y = np.mgrid[extent[0]:extent[1]:res[0] * 1j, extent[2]:extent[3]:res[1] * 1j]
+    grid_points = np.c_[grid_x.ravel(), grid_y.ravel()]
     distance_threshold = config.DEPTH_MAP_DEPTH_THRESHOLD
     vmin, vmax = 1e9, -1e9
     exclude_frames = set()
     for frame_index in range(n):
         distances = frame_bone_distance_map_distances[frame_index]
-        distances = distances[(~np.isnan(distances)) &
-                              (distances < distance_threshold)]
+        distances = distances[(~np.isnan(distances)) & (distances < distance_threshold)]
         depths = frame_contact_component_depth_map_depths
         frame_contact_depths = depths[frame_index] if depths else []
+
         if len(frame_contact_depths) > 0:
             g_depth = np.concatenate(frame_contact_depths)
             g_depth = g_depth[~np.isnan(g_depth)]
             all_data = np.concatenate([-distances, g_depth])
         else:
             all_data = -distances
+
         if len(all_data) == 0:
             exclude_frames.add(frame_index)
             continue
         vmax = max(np.max(all_data), vmax)
         vmin = min(np.min(all_data), vmin)
     if all(i in exclude_frames for i in range(n)):
-        return
+        return None
 
     frames = []
     for frame_index in tqdm.tqdm(range(n)):
@@ -508,7 +510,7 @@ def plot_contact_depth_maps(extent,
         coord = frame_coordinates[frame_index]
         origins = frame_bone_distance_map_origins[frame_index].astype(Real)
         distances = frame_bone_distance_map_distances[frame_index]
-        mask = distances < distance_threshold
+        mask = (~np.isnan(distances)) & (distances < distance_threshold)
         origins = origins[mask]
         depths = -distances[mask]
         deepest = []
@@ -535,17 +537,25 @@ def plot_contact_depth_maps(extent,
                 origins = np.vstack([origins, c_origins])
                 depths = np.concatenate([depths, c_depth])
 
-        groups = [coord.project(origins)[:, 0] >= 0,
-                  coord.project(origins)[:, 0] < 0]
+        origins_projected = coord.project(origins)
+        origins_projected_2d = origins_projected[:, :2]
 
-        g_origins = [origins[grp_mask] for grp_mask in groups]
-        g_origins_2d = [coord.project(origins)[:, :2] for origins in g_origins]
+        origins_projected_x = origins_projected[:, 0]
+        groups = [origins_projected_x >= 0, origins_projected_x < 0]
+
+        g_origins_2d = [origins_projected_2d[grp_mask] for grp_mask in groups]
         g_depth = [depths[grp_mask] for grp_mask in groups]
+
         g_z = []
         for i in range(2):
             if (g_origins_2d[i] is not None and len(g_origins_2d[i]) > 1
                     and g_depth[i] is not None and len(g_depth[i]) > 1):
-                g_z.append(griddata(g_origins_2d[i], g_depth[i], (grid_x, grid_y), method='linear'))
+                o, d = g_origins_2d[i], g_depth[i]
+                tree = cKDTree(o)
+                z = griddata(o, d, (grid_x, grid_y), method='linear')
+                dists, _ = tree.query(grid_points)
+                z.ravel()[dists > 2] = np.nan
+                g_z.append(z)
 
         if len(g_z) == 2:
             z = np.where(np.isnan(g_z[0]), g_z[1], g_z[0])
@@ -597,10 +607,52 @@ def plot_contact_depth_maps(extent,
     return frames
 
 
-def gen_bone_animation(bone_animation_frames):
-    path = os.path.join(config.OUTPUT_DIRECTORY, 'animation.gif')
-    fps = 10 if config.MOVEMENT_SMOOTH else 3
-    gen_animation(bone_animation_frames, path, fps)
+def gen_animation(frames: list[Image.Image], name: str, duration: float):
+    gif_path = os.path.join(config.OUTPUT_DIRECTORY, f'{name}.gif')
+    mp4_path = os.path.join(config.OUTPUT_DIRECTORY, f'{name}.mp4')
+
+    if not frames or len(frames) == 0:
+        print('No frames to generate: {}', gif_path)
+        return
+
+    # gif
+    frames[0].save(
+        gif_path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=duration/len(frames)*1000,
+        loop=0
+    )
+
+    # mp4
+    fps = 24
+    total_frames = int(fps * duration)
+    n_src = len(frames)
+    if n_src == total_frames:
+        sel = frames
+    else:
+        sel = []
+        step = (n_src - 1) / (total_frames - 1) if total_frames > 1 else 0
+        for i in range(total_frames):
+            idx = int(round(i * step))
+            sel.append(frames[idx])
+
+    with av.open(mp4_path, mode='w') as container:
+        stream = container.add_stream('libx264', rate=fps)
+        stream.width, stream.height = sel[0].size
+        stream.pix_fmt = 'yuv420p'
+        stream.options = {
+            'crf': '0',
+            'preset': 'veryslow',
+        }
+        for img in tqdm.tqdm(sel):
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            frame = av.VideoFrame.from_image(img)
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
 
 
 def gen_bone_animation_frames(frame_femur_meshes, frame_tibia_meshes,
@@ -860,6 +912,7 @@ def dump_dof(raw, smoothed):
     if smoothed is not None:
         do_dump_dof(smoothed, "dof_smoothed.csv")
 
+
 def do_dump_dof(dof_data, filename):
     y_tx, y_ty, y_tz, y_rx, y_ry, y_rz = dof_data
     num_frames = len(y_tx)
@@ -997,63 +1050,63 @@ def smooth_dof(dof_data):
     return dof_interpolate_data
 
 
-def exp_y_rotation(efcm, etcm, tibia_coord):
-    x = np.arange(-10, 10.1, 5)
-    ax = trimesh.creation.axis(axis_length=20, axis_radius=0.1)
-    ym = []
-    yl = []
-    scenes_y = []
-    scenes_z = []
-    for deg in x:
-        arc = deg / 180 * np.pi
-        t = etcm.copy()
-        t.vertices = tibia_coord.project(t.vertices)
-        f = efcm.copy()
-        f.vertices = tibia_coord.project(f.vertices)
-        f = f.apply_transform(Transformation3D().apply_rotation(
-            Rotation.from_euler('y', arc)).mat_homo)
-
-        cs = f.intersection(t).split()
-        scene = trimesh.Scene([ax] + cs)
-        scene.set_camera(center=(0, 0, 0), distance=96)
-        img_data = scene.save_image(visible=True)
-        img_path = os.path.join(config.OUTPUT_DIRECTORY,
-                                f'rotate_{deg:.1f}_deg_z.png')
-        with open(img_path, 'wb') as f:
-            f.write(img_data)
-        scenes_z.append(Image.open(img_path))
-
-        scene = trimesh.Scene([ax] + cs)
-        scene.set_camera(center=(0, 0, 0), distance=96,
-                         angles=(np.pi / 2, 0, 0))
-        img_data = scene.save_image(visible=True)
-        img_path = os.path.join(config.OUTPUT_DIRECTORY,
-                                f'rotate_{deg:.1f}_deg_y.png')
-        with open(img_path, 'wb') as f:
-            f.write(img_data)
-        scenes_y.append(Image.open(img_path))
-
-        mds = [0]
-        lds = [0]
-        for c in cs:
-            _, depths = do_calc_contact_depth_map(c, tibia_coord)
-            if c.centroid[0] < 0:
-                mds += list(depths)
-            else:
-                lds += list(depths)
-        ym.append(max(mds))
-        yl.append(max(lds))
-
-    plt.plot(x, ym, 'x-', label='Medial')
-    plt.plot(x, yl, 'x-', label='Lateral')
-    plt.xlabel('Degree')
-    plt.ylabel('Max Depth')
-    plt.legend()
-
-    gen_animation(scenes_z, os.path.join(
-        config.OUTPUT_DIRECTORY, 'rotation_animation_z.gif'))
-    gen_animation(scenes_y, os.path.join(
-        config.OUTPUT_DIRECTORY, 'rotation_animation_y.gif'))
+# def exp_y_rotation(efcm, etcm, tibia_coord):
+#     x = np.arange(-10, 10.1, 5)
+#     ax = trimesh.creation.axis(axis_length=20, axis_radius=0.1)
+#     ym = []
+#     yl = []
+#     scenes_y = []
+#     scenes_z = []
+#     for deg in x:
+#         arc = deg / 180 * np.pi
+#         t = etcm.copy()
+#         t.vertices = tibia_coord.project(t.vertices)
+#         f = efcm.copy()
+#         f.vertices = tibia_coord.project(f.vertices)
+#         f = f.apply_transform(Transformation3D().apply_rotation(
+#             Rotation.from_euler('y', arc)).mat_homo)
+#
+#         cs = f.intersection(t).split()
+#         scene = trimesh.Scene([ax] + cs)
+#         scene.set_camera(center=(0, 0, 0), distance=96)
+#         img_data = scene.save_image(visible=True)
+#         img_path = os.path.join(config.OUTPUT_DIRECTORY,
+#                                 f'rotate_{deg:.1f}_deg_z.png')
+#         with open(img_path, 'wb') as f:
+#             f.write(img_data)
+#         scenes_z.append(Image.open(img_path))
+#
+#         scene = trimesh.Scene([ax] + cs)
+#         scene.set_camera(center=(0, 0, 0), distance=96,
+#                          angles=(np.pi / 2, 0, 0))
+#         img_data = scene.save_image(visible=True)
+#         img_path = os.path.join(config.OUTPUT_DIRECTORY,
+#                                 f'rotate_{deg:.1f}_deg_y.png')
+#         with open(img_path, 'wb') as f:
+#             f.write(img_data)
+#         scenes_y.append(Image.open(img_path))
+#
+#         mds = [0]
+#         lds = [0]
+#         for c in cs:
+#             _, depths = do_calc_contact_depth_map(c, tibia_coord)
+#             if c.centroid[0] < 0:
+#                 mds += list(depths)
+#             else:
+#                 lds += list(depths)
+#         ym.append(max(mds))
+#         yl.append(max(lds))
+#
+#     plt.plot(x, ym, 'x-', label='Medial')
+#     plt.plot(x, yl, 'x-', label='Lateral')
+#     plt.xlabel('Degree')
+#     plt.ylabel('Max Depth')
+#     plt.legend()
+#
+#     gen_animation(scenes_z, os.path.join(
+#         config.OUTPUT_DIRECTORY, 'rotation_animation_z.gif'))
+#     gen_animation(scenes_y, os.path.join(
+#         config.OUTPUT_DIRECTORY, 'rotation_animation_y.gif'))
 
 
 def plot_max_depth_curve(frame_contact_components, contact_component_depth_maps, frame_coordinates):
@@ -1091,24 +1144,21 @@ def plot_max_depth_curve(frame_contact_components, contact_component_depth_maps,
     fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, 'max_depth_curve_split.png'))
     plt.close(fig)
 
-
-def gen_animation(frames, output_path, fps: float = 2.5):
-    if not frames or len(frames) == 0:
-        print('No frames to generate: {}', output_path)
-        return
-    frames[0].save(
-        output_path,
-        save_all=True,
-        append_images=frames[1:],
-        duration=int(1000 / fps),
-        loop=0
-    )
+    df = pd.DataFrame({
+        'index': np.arange(n),
+        'max_depth': mds,
+        'max_depth_medial': mdms,
+        'max_depth_lateral': mdls,
+    })
+    df.to_csv(os.path.join(config.OUTPUT_DIRECTORY, 'max_depth_curve.csv'), index=False)
 
 
 def load_coord_from_file(path):
     coord_points = {}
-    with open(path, 'r') as f:
+    with (open(path, 'r') as f):
         for line in f.readlines():
+            if line.isspace():
+                continue
             key, val_s = tuple(line.split())
             x, y, z = tuple(val_s.split(','))
             coord_points[key] = np.array([float(x), float(y), float(z)])
@@ -1177,7 +1227,10 @@ def do_calc_bone_distance_map(target, base, v):
 
 def prepare_rays_from_model(model, direction, reverse=False):
     ud = normalize(direction)
-    mask = np.dot(model.vertex_normals, ud) < 0
+    if reverse:
+        mask = np.dot(model.vertex_normals, ud) < 0
+    else:
+        mask = np.dot(model.vertex_normals, ud) > 0
     origins = model.vertices[mask]
     eps = 1e-4
     if reverse:
@@ -1287,8 +1340,7 @@ def plot_frame_cart_thickness_heatmap(extent, background, frame_cart_thickness_m
             )
             ims.append(im)
 
-        ax.imshow(background, extent=extent,
-                  interpolation='none', aspect='equal')
+        ax.imshow(background, extent=extent, interpolation='none', aspect='equal')
         cb = fig.colorbar(ims[0], ax=ax)
         cb.set_label('Thickness')
         image_path = os.path.join(

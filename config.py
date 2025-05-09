@@ -53,20 +53,20 @@ OUTPUT_DIRECTORY = 'output'
 
 # tasks
 GENERATE_ANIMATION = True
-GENERATE_DEPTH_CURVE = False
+GENERATE_DEPTH_CURVE = True
 GENERATE_DEPTH_MAP = True
 GENERATE_DOF_CURVES = False
 
-KNEE_SIDE = KneeSide.LEFT
-FEMUR_MODEL_FILE = 'acc_task/Femur.stl'
-FEMUR_CARTILAGE_MODEL_FILE = 'acc_task/Femur_Cart_Smooth.stl'
-TIBIA_MODEL_FILE = 'acc_task/Tibia.stl'
-TIBIA_CARTILAGE_MODEL_FILE = 'acc_task/Tibia_Cart_Smooth.stl'
-FEATURE_POINT_FILE = 'acc_task/Coordination_Pt.txt'
-IGNORE_CARTILAGE = False
+KNEE_SIDE = KneeSide.RIGHT
+FEMUR_MODEL_FILE = 'model_0509/Femur_Smooth.stl'
+FEMUR_CARTILAGE_MODEL_FILE = 'model_0509/Femur_Cart_Smooth.stl'
+TIBIA_MODEL_FILE = 'model_0509/Tibia_Smooth.stl'
+TIBIA_CARTILAGE_MODEL_FILE = 'model_0509/Tibia_Cart_Smooth.stl'
+FEATURE_POINT_FILE = 'model_0509/Coordinate.txt'
+IGNORE_CARTILAGE = True
 
 MOVEMENT_DATA_FORMAT = MomentDataFormat.CSV
-MOVEMENT_DATA_FILE = 'acc_task/sical_test_rm.csv'
+MOVEMENT_DATA_FILE = 'model_0509/cleaned_trial.csv'
 MOVEMENT_SMOOTH = False
 MOVEMENT_PICK_FRAMES: Optional[list[int]] = None
 MOVEMENT_INTERPOLATE_METHOD: InterpolateMethod = InterpolateMethod.CubicSpline
@@ -80,6 +80,7 @@ ANIMATION_RESOLUTION = (1000, 1000)
 ANIMATION_DIRECTION = AnimationCameraDirection.FIX_TIBIA_FRONT
 ANIMATION_LIGHT_INTENSITY = 3.0
 ANIMATION_SHOW_BONE_COORDINATE = True  # RED: x-axis; GREEN: y-axis; BLUE: z-axis
+ANIMATION_DURATION = 10 # bone movement animation length, in seconds
 
 DEPTH_MAP_BONE_COLOR_FEMUR = '#ffffff'
 DEPTH_MAP_BONE_COLOR_TIBIA = '#ffffff'
@@ -90,7 +91,8 @@ DEPTH_MAP_LIGHT_INTENSITY = 3.0
 DEPTH_DIRECTION: DepthDirection = DepthDirection.Z_AXIS
 DEPTH_BASE_BONE: BaseBone = BaseBone.TIBIA
 DEPTH_MAP_MARK_MAX = True
-DEPTH_MAP_DEPTH_THRESHOLD = 10
+DEPTH_MAP_DEPTH_THRESHOLD = 20
+DEPTH_MAP_DURATION = ANIMATION_DURATION # depth map animation length, in seconds
 
 DOF_ROTATION_METHOD: DofRotationMethod = DofRotationMethod.JCS
 DOF_BASE_BONE: BaseBone = BaseBone.FEMUR

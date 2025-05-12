@@ -636,7 +636,7 @@ def gen_animation(frames: list[Image.Image], name: str, duration: float):
         gif_path,
         save_all=True,
         append_images=frames[1:],
-        duration=duration/len(frames)*1000,
+        duration=duration / len(frames) * 1000,
         loop=0
     )
 
@@ -1140,7 +1140,8 @@ def plot_max_depth_curve(frame_contact_components, contact_component_depth_maps,
         for c, (_, depths) in zip(components, depth_maps):
             if depths is None or depths.shape[0] == 0:
                 continue
-            if coordinate.project(c.centroid)[0] < 0:
+            if ((cx := coordinate.project(c.centroid)[0]) >= 0 and config.KNEE_SIDE == config.KneeSide.LEFT) or \
+                    (cx < 0 and config.KNEE_SIDE == config.KneeSide.RIGHT):
                 mdm = max(mdm, np.max(depths))
             else:
                 mdl = max(mdl, np.max(depths))

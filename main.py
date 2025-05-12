@@ -251,33 +251,32 @@ def main():
         task_frame_contact_areas, task_frame_coordinates
     ])
 
-    task_frame_femur_cart_thickness = ctx.add_task('frame_femur_cart_thickness', calc_frame_cart_thickness,
-                                                   deps=[task_frame_ray_directions, task_frame_femur_cart_meshes])
-    task_frame_tibia_cart_thickness = ctx.add_task('frame_tibia_cart_thickness', calc_frame_cart_thickness,
-                                                   deps=[task_frame_ray_directions, task_frame_tibia_cart_meshes])
-    task_frame_femur_cart_thickness_origins = \
-        ctx.add_task('frame_femur_cart_thickness_origins',
-                     list_take_kth(0), deps=[task_frame_femur_cart_thickness])
-    task_frame_femur_cart_thickness_map = \
-        ctx.add_task('frame_femur_cart_thickness_map',
-                     list_take_kth(1), deps=[task_frame_femur_cart_thickness])
-    task_frame_tibia_cart_thickness_origins = \
-        ctx.add_task('frame_tibia_cart_thickness_origins',
-                     list_take_kth(0), deps=[task_frame_tibia_cart_thickness])
-    task_frame_tibia_cart_thickness_map = \
-        ctx.add_task('frame_tibia_cart_thickness_map',
-                     list_take_kth(1), deps=[task_frame_tibia_cart_thickness])
-
-    task_frame_femur_cart_thickness_origins_projected = ctx.add_task(
-        'frame_femur_cart_thickness_origins_projected', project_cart_thickness_origins,
-        deps=[task_frame_femur_cart_thickness_origins,
-              task_frame_tibia_coordinates],
-    )
-    task_frame_tibia_cart_thickness_origins_projected = ctx.add_task(
-        'frame_tibia_cart_thickness_origins_projected', project_cart_thickness_origins,
-        deps=[task_frame_tibia_cart_thickness_origins,
-              task_frame_tibia_coordinates],
-    )
+    # task_frame_femur_cart_thickness = ctx.add_task('frame_femur_cart_thickness', calc_frame_cart_thickness,
+    #                                                deps=[task_frame_ray_directions, task_frame_femur_cart_meshes])
+    # task_frame_tibia_cart_thickness = ctx.add_task('frame_tibia_cart_thickness', calc_frame_cart_thickness,
+    #                                                deps=[task_frame_ray_directions, task_frame_tibia_cart_meshes])
+    # task_frame_femur_cart_thickness_origins = \
+    #     ctx.add_task('frame_femur_cart_thickness_origins',
+    #                  list_take_kth(0), deps=[task_frame_femur_cart_thickness])
+    # task_frame_femur_cart_thickness_map = \
+    #     ctx.add_task('frame_femur_cart_thickness_map',
+    #                  list_take_kth(1), deps=[task_frame_femur_cart_thickness])
+    # task_frame_tibia_cart_thickness_origins = \
+    #     ctx.add_task('frame_tibia_cart_thickness_origins',
+    #                  list_take_kth(0), deps=[task_frame_tibia_cart_thickness])
+    # task_frame_tibia_cart_thickness_map = \
+    #     ctx.add_task('frame_tibia_cart_thickness_map',
+    #                  list_take_kth(1), deps=[task_frame_tibia_cart_thickness])
+    # task_frame_femur_cart_thickness_origins_projected = ctx.add_task(
+    #     'frame_femur_cart_thickness_origins_projected', project_cart_thickness_origins,
+    #     deps=[task_frame_femur_cart_thickness_origins,
+    #           task_frame_tibia_coordinates],
+    # )
+    # task_frame_tibia_cart_thickness_origins_projected = ctx.add_task(
+    #     'frame_tibia_cart_thickness_origins_projected', project_cart_thickness_origins,
+    #     deps=[task_frame_tibia_cart_thickness_origins,
+    #           task_frame_tibia_coordinates],
+    # )
     # task_plot_femur_cart_thickness = ctx.add_task(
     #     'plot_femur_cart_thickness',
     #     lambda a, b, c, d: plot_frame_cart_thickness_heatmap(
@@ -353,6 +352,12 @@ def main():
     task_plot_dof_curves = ctx.add_task('plot_dof_curves', plot_dof_curves,
                                         deps=[task_dof_data_raw, task_dof_data_smoothed])
 
+    task_frame_deepest_points = ctx.add_task('frame_deepest_points', calc_contact_deepest_points, deps=[
+        task_frame_coordinates,
+        task_frame_contact_component_depth_map_origins,
+        task_frame_contact_component_depth_map_depths,
+    ])
+
     task_contact_depth_map_frames = ctx.add_task('frame_contact_depth_map_frames', plot_contact_depth_maps,
                                                  deps=[
                                                      task_depth_map_extent,
@@ -363,11 +368,31 @@ def main():
                                                      task_frame_contact_components,
                                                      task_frame_contact_component_depth_map_origins,
                                                      task_frame_contact_component_depth_map_depths,
+                                                     task_frame_deepest_points,
                                                  ])
     task_contact_depth_map_animation = \
         ctx.add_task('frame_contact_depth_map_animation',
                      functools.partial(gen_animation, name='depth_map_animation', duration=config.DEPTH_MAP_DURATION),
                      deps=[task_contact_depth_map_frames])
+
+    task_frame_femur_cart_thickness_curve = \
+        ctx.add_task('frame_femur_cart_thickness',
+                     functools.partial(plot_cartilage_thickness_curve, bone_name='femur'),
+                     deps=[
+                         task_frame_femur_cart_meshes,
+                         task_frame_deepest_points,
+                         task_frame_ray_directions
+                     ])
+    task_frame_tibia_cart_thickness_curve = \
+        ctx.add_task('frame_tibia_cart_thickness',
+                     functools.partial(plot_cartilage_thickness_curve, bone_name='tibia', first2=True),
+                     deps=[
+                         task_frame_tibia_cart_meshes,
+                         task_frame_deepest_points,
+                         task_frame_ray_directions
+                     ])
+    task_frame_femur_cart_thickness_curve()
+    task_frame_tibia_cart_thickness_curve()
     # if config.Y_ROTATE_EXP:
     #     task_exp_y_rotation()
     if config.GENERATE_ANIMATION:
@@ -469,6 +494,39 @@ def gen_contact_depth_map_background(contact_depth_map_extent, tibia_mesh, tibia
     return background
 
 
+def calc_contact_deepest_points(
+        frame_coordinates,
+        frame_contact_component_depth_map_origins,
+        frame_contact_component_depth_map_depths,
+):
+    n = len(frame_contact_component_depth_map_origins)
+    frame_deepest_points = []
+    for frame_index in range(n):
+        coord = frame_coordinates[frame_index]
+        deepest = []
+        if (frame_contact_component_depth_map_origins and
+                frame_contact_component_depth_map_depths):
+            for c_origins, c_depth in zip(
+                    frame_contact_component_depth_map_origins[frame_index],
+                    frame_contact_component_depth_map_depths[frame_index]
+            ):
+                if len(c_origins) == 0 or len(c_depth) == 0:
+                    continue
+                idx = np.argmax(c_depth)
+                deepest.append((c_origins[idx], c_depth[idx]))
+
+        left, right = (None, -1e9), (None, -1e9)
+        for origin, depth in deepest:
+            if coord.project(origin)[0] < 0 and left[1] < depth:
+                left = (origin, depth)
+            if coord.project(origin)[0] > 0 and right[1] < depth:
+                right = (origin, depth)
+
+        frame_deepest_points.append((left[0], right[0]))
+
+    return frame_deepest_points
+
+
 def plot_contact_depth_maps(extent,
                             background,
                             frame_coordinates,
@@ -476,7 +534,8 @@ def plot_contact_depth_maps(extent,
                             frame_bone_distance_map_distances,
                             frame_contact_components,
                             frame_contact_component_depth_map_origins,
-                            frame_contact_component_depth_map_depths):
+                            frame_contact_component_depth_map_depths,
+                            frame_deepest_points):
     n = len(frame_bone_distance_map_distances)
     res = config.DEPTH_MAP_RESOLUTION
     grid_x, grid_y = np.mgrid[extent[0]:extent[1]:res[0] * 1j, extent[2]:extent[3]:res[1] * 1j]
@@ -515,7 +574,6 @@ def plot_contact_depth_maps(extent,
         mask = (~np.isnan(distances)) & (distances < distance_threshold)
         origins = origins[mask]
         depths = -distances[mask]
-        deepest = []
 
         if (frame_contact_components and
                 frame_contact_component_depth_map_origins and
@@ -528,9 +586,6 @@ def plot_contact_depth_maps(extent,
                 if len(c_origins) == 0 or len(c_depth) == 0:
                     continue
                 c_vertices = c_mesh.vertices.astype(Real)
-                if config.DEPTH_MAP_MARK_MAX:
-                    idx = np.argmax(c_depth)
-                    deepest.append((c_origins[idx], c_depth[idx]))
                 s_origins = (np.round(origins, decimals=3) * 1e4).astype(np.int64)
                 s_vertices = (np.round(c_vertices, decimals=3) * 1e4).astype(np.int64)
                 intersect = np.intersect1d(s_origins, s_vertices)
@@ -584,20 +639,15 @@ def plot_contact_depth_maps(extent,
         )
         cb = fig.colorbar(im, ax=ax, extend='both')
         cb.set_label('Depth')
-        if len(deepest) > 0:
-            left, right = (None, -1e9), (None, -1e9)
-            for origin, depth in deepest:
-                if coord.project(origin)[0] < 0 and left[1] < depth:
-                    left = (origin, depth)
-                if coord.project(origin)[0] > 0 and right[1] < depth:
-                    right = (origin, depth)
 
-            deepest = []
-            if left[0] is not None: deepest.append(left[0])
-            if right[0] is not None: deepest.append(right[0])
-            deepest = np.array(deepest, dtype=Real)
-            deepest_2d = coord.project(deepest)[:, :2]
-            ax.scatter(deepest_2d[:, 0], deepest_2d[:, 1], marker='+', s=100, color='turquoise')
+        left_deepest_point, right_deepest_point = frame_deepest_points[frame_index]
+        if left_deepest_point is not None or right_deepest_point is not None:
+            deepest_points = []
+            if left_deepest_point is not None: deepest_points.append(left_deepest_point)
+            if right_deepest_point is not None: deepest_points.append(right_deepest_point)
+            deepest_points = np.array(deepest_points, dtype=Real)
+            deepest_points_2d = coord.project(deepest_points)[:, :2]
+            ax.scatter(deepest_points_2d[:, 0], deepest_points_2d[:, 1], marker='+', s=100, color='turquoise')
 
         for label in ax.get_yticklabels():
             if label.get_text() == '0':
@@ -1513,6 +1563,52 @@ def smooth_transformations(raw: List[Transformation3D]) -> List[Transformation3D
         t.set_rotation(Rotation.from_euler(seq='xyz', angles=[rx, ry, rz]))
         smoothed.append(t)
     return smoothed
+
+
+def plot_cartilage_thickness_curve(
+        frame_cart_meshes, frame_deepest_points, frame_ray_direction, bone_name: str = '', first2: bool = False):
+    if frame_cart_meshes is None or len(frame_cart_meshes) == 0 or config.IGNORE_CARTILAGE:
+        print("Cartilages ignored.")
+        return
+
+    n = len(frame_cart_meshes)
+    left_x, right_x = np.zeros((n,), dtype=Real), np.zeros((n,), dtype=Real)
+    for frame_index in range(n):
+        cart_mesh = frame_cart_meshes[frame_index]
+        ray_direction = frame_ray_direction[frame_index]
+        ray_direction = ray_direction.reshape(1, 3)
+
+        thickness = [0, 0]
+        for point_index, point in enumerate(frame_deepest_points[frame_index]):
+            origin = np.array([point], dtype=Real) - ray_direction * 1e6
+            hits, ray_indices, _ = \
+                cart_mesh.ray.intersects_location(origin, ray_direction, multiple_hits=True)
+            if len(ray_indices) >= 2:
+                distances = np.linalg.norm(hits - origin, axis=1)
+                indices = np.argsort(distances)
+                if first2:
+                    indices = indices[:2]
+                else:
+                    indices = indices[-2:]
+                thickness[point_index] = np.linalg.norm(hits[indices[0]] - hits[indices[1]])
+        left_x[frame_index], right_x[frame_index] = thickness
+    fig, ax = plt.subplots()
+
+    medial, lateral = right_x, left_x
+    if config.KneeSide == config.KneeSide.RIGHT:
+        medial, lateral = lateral, medial
+    ax.plot(medial, label='Medial')
+    ax.plot(lateral, label='Lateral')
+    ax.legend()
+    ax.set_title(f'Cartilage Thickness Curve - {bone_name.capitalize()}')
+    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'{bone_name}_cartilage_thickness.jpg'))
+    plt.close(fig)
+
+    pd.DataFrame({
+        'Frame': np.arange(n),
+        "Medial": medial,
+        'Lateral': lateral,
+    }).to_csv(os.path.join(config.OUTPUT_DIRECTORY, f'{bone_name}_cartilage_thickness.csv'), index=False)
 
 
 if __name__ == "__main__":

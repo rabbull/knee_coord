@@ -55,18 +55,18 @@ OUTPUT_DIRECTORY = 'output'
 GENERATE_ANIMATION = True
 GENERATE_DEPTH_CURVE = True
 GENERATE_DEPTH_MAP = True
-GENERATE_DOF_CURVES = False
+GENERATE_DOF_CURVES = True
 
-KNEE_SIDE = KneeSide.RIGHT
-FEMUR_MODEL_FILE = 'model_0509/Femur_Smooth.stl'
-FEMUR_CARTILAGE_MODEL_FILE = 'model_0509/Femur_Cart_Smooth.stl'
-TIBIA_MODEL_FILE = 'model_0509/Tibia_Smooth.stl'
-TIBIA_CARTILAGE_MODEL_FILE = 'model_0509/Tibia_Cart_Smooth.stl'
-FEATURE_POINT_FILE = 'model_0509/Coordinate.txt'
-IGNORE_CARTILAGE = True
+KNEE_SIDE = KneeSide.LEFT
+FEMUR_MODEL_FILE = 'acc_task/Femur.stl'
+FEMUR_CARTILAGE_MODEL_FILE = 'acc_task/Femur_Cart_Smooth.stl'
+TIBIA_MODEL_FILE = 'acc_task/Tibia.stl'
+TIBIA_CARTILAGE_MODEL_FILE = 'acc_task/Tibia_Cart_Smooth.stl'
+FEATURE_POINT_FILE = 'acc_task/Coordination_Pt.txt'
+IGNORE_CARTILAGE = False
 
 MOVEMENT_DATA_FORMAT = MomentDataFormat.CSV
-MOVEMENT_DATA_FILE = 'model_0509/cleaned_trial.csv'
+MOVEMENT_DATA_FILE = 'acc_task/sical_test_rm.csv'
 MOVEMENT_SMOOTH = False
 MOVEMENT_PICK_FRAMES: Optional[list[int]] = None
 MOVEMENT_INTERPOLATE_METHOD: InterpolateMethod = InterpolateMethod.CubicSpline

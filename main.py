@@ -3,6 +3,7 @@ import functools
 import json
 import logging
 import os
+import sys
 from typing import Any, Self, List, Tuple
 import csv
 from datetime import datetime
@@ -19,6 +20,7 @@ from scipy.spatial import cKDTree
 from sklearn.cluster import KMeans
 import av
 import pandas as pd
+from trimesh.creation import icosphere, cylinder
 
 import config
 import task
@@ -523,14 +525,18 @@ def plot_contact_depth_maps(extent,
                     frame_contact_component_depth_map_origins[frame_index],
                     frame_contact_component_depth_map_depths[frame_index]
             ):
-                if len(c_origins) or len(c_depth) == 0:
+                if len(c_origins) == 0 or len(c_depth) == 0:
                     continue
                 c_vertices = c_mesh.vertices.astype(Real)
                 if config.DEPTH_MAP_MARK_MAX:
-                    deepest.append(c_origins[np.argmax(c_depth)])
+                    idx = np.argmax(c_depth)
+                    deepest.append((c_origins[idx], c_depth[idx]))
                 s_origins = (np.round(origins, decimals=3) * 1e4).astype(np.int64)
                 s_vertices = (np.round(c_vertices, decimals=3) * 1e4).astype(np.int64)
                 intersect = np.intersect1d(s_origins, s_vertices)
+                # o_view = s_origins.view([('', s_origins.dtype)] * 2)
+                # v_view = s_vertices.view([('', s_vertices.dtype)] * 2)
+                # intersect = np.intersect1d(o_view, v_view)
                 keep = np.all(~np.isin(s_origins, intersect), axis=1)
                 origins = origins[keep]
                 depths = depths[keep]
@@ -579,7 +585,17 @@ def plot_contact_depth_maps(extent,
         cb = fig.colorbar(im, ax=ax, extend='both')
         cb.set_label('Depth')
         if len(deepest) > 0:
-            deepest = np.array(deepest)
+            left, right = (None, -1e9), (None, -1e9)
+            for origin, depth in deepest:
+                if coord.project(origin)[0] < 0 and left[1] < depth:
+                    left = (origin, depth)
+                if coord.project(origin)[0] > 0 and right[1] < depth:
+                    right = (origin, depth)
+
+            deepest = []
+            if left[0] is not None: deepest.append(left[0])
+            if right[0] is not None: deepest.append(right[0])
+            deepest = np.array(deepest, dtype=Real)
             deepest_2d = coord.project(deepest)[:, :2]
             ax.scatter(deepest_2d[:, 0], deepest_2d[:, 1], marker='+', s=100, color='turquoise')
 
@@ -1146,9 +1162,9 @@ def plot_max_depth_curve(frame_contact_components, contact_component_depth_maps,
 
     df = pd.DataFrame({
         'index': np.arange(n),
-        'max_depth': mds,
-        'max_depth_medial': mdms,
-        'max_depth_lateral': mdls,
+        'max_depth': np.array(mds, dtype=Real),
+        'max_depth_medial': np.array(mdms, dtype=Real),
+        'max_depth_lateral': np.array(mdls, dtype=Real),
     })
     df.to_csv(os.path.join(config.OUTPUT_DIRECTORY, 'max_depth_curve.csv'), index=False)
 
@@ -1190,15 +1206,30 @@ def calc_contact_depth_map(frame_ray_directions, frame_contact_components):
             direction = -direction
         depth_maps = []
         for component in components:
-            depth_maps.append(do_calc_contact_depth_map(component, direction))
+            depth_map = do_calc_contact_depth_map(component, direction)
+            depth_maps.append(depth_map)
         res.append(depth_maps)
     return res
 
 
 def do_calc_contact_depth_map(contact_component, v):
-    origins, directions = prepare_rays_from_model(contact_component, -v, True)
+    origins, directions = prepare_rays_from_model(contact_component, v, True)
+
+    # scene = trimesh.Scene([contact_component])
+    # for origin, direction in zip(origins, directions):
+    #     sphere = icosphere(radius=0.01)
+    #     sphere.apply_translation(origin)
+    #     scene.add_geometry(sphere)
+    #
+    #     ud = direction / np.linalg.norm(direction)
+    #     end = origin + ud * 0.1
+    #     segment = np.stack([origin, end], axis=0)
+    #     arrow = cylinder(radius=0.005, segment=segment)
+    #     scene.add_geometry(arrow)
+    # scene.show()
+
     locations, ray_indices, _ = \
-        contact_component.ray.intersects_location(origins, directions)
+        contact_component.ray.intersects_location(origins, directions, multiple_hits=False)
     if len(ray_indices) == 0:
         return np.zeros((0, 3)), np.zeros((0,))
     origins = origins[ray_indices]
@@ -1225,15 +1256,12 @@ def do_calc_bone_distance_map(target, base, v):
     return origins, depths
 
 
-def prepare_rays_from_model(model, direction, reverse=False):
+def prepare_rays_from_model(model, direction, inward: bool = False, eps: float = 1e-4):
     ud = normalize(direction)
-    if reverse:
-        mask = np.dot(model.vertex_normals, ud) < 0
-    else:
-        mask = np.dot(model.vertex_normals, ud) > 0
+    mask = np.dot(model.vertex_normals, ud) > 0
     origins = model.vertices[mask]
-    eps = 1e-4
-    if reverse:
+
+    if inward:
         ud = -ud
     origins += ud * eps
     directions = np.tile(ud, (len(origins), 1))

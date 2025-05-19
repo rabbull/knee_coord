@@ -329,8 +329,6 @@ def main():
         task_frame_coordinates,
     ])
     task_dof_rotation_method = ctx.add_task('task_dof_rotation_method', lambda: config.DOF_ROTATION_METHOD)
-    task_dof_rotation_method_xyz = \
-        ctx.add_task('task_dof_rotation_method_xyz', lambda: config.DofRotationMethod.EULER_XYZ)
     task_dof_data_smoothed = ctx.add_task(
         'dof_data_smoothed',
         lambda *args: calc_dof(*args) if config.MOVEMENT_SMOOTH else None,
@@ -391,10 +389,25 @@ def main():
                          task_frame_deepest_points,
                          task_frame_ray_directions
                      ])
-    task_frame_femur_cart_thickness_curve()
-    task_frame_tibia_cart_thickness_curve()
-    # if config.Y_ROTATE_EXP:
-    #     task_exp_y_rotation()
+
+    task_tibia_normed_max_depth_curve = ctx.add_task(
+        'tibia_normed_max_depth_curve',
+        functools.partial(plot_normed_max_depth_curve, name='tibia'),
+        deps=[
+            task_frame_tibia_cart_thickness_curve,
+            task_max_depth_curve,
+        ])
+    task_femur_normed_max_depth_curve = ctx.add_task(
+        'femur_normed_max_depth_curve',
+        functools.partial(plot_normed_max_depth_curve, name='femur'),
+        deps=[
+            task_frame_tibia_cart_thickness_curve,
+            task_max_depth_curve,
+        ])
+
+    if config.GENERATE_CART_THICKNESS_CURVE:
+        task_frame_femur_cart_thickness_curve()
+        task_frame_tibia_cart_thickness_curve()
     if config.GENERATE_ANIMATION:
         task_movement_animation()
     if config.GENERATE_DEPTH_CURVE:
@@ -404,10 +417,9 @@ def main():
     if config.GENERATE_DOF_CURVES:
         task_plot_dof_curves()
         task_dump_dof()
-    # if config.GENERATE_FEMUR_CARTILAGE_THICKNESS_MAP:
-    #     task_plot_femur_cart_thickness()
-    # if config.GENERATE_TIBIA_CARTILAGE_THICKNESS_MAP:
-    #     task_plot_tibia_cart_thickness()
+    if config.GENERATE_NORM_DEPTH_CURVE:
+        task_tibia_normed_max_depth_curve()
+        task_femur_normed_max_depth_curve()
 
 
 def load_mesh(path: Optional[str]):
@@ -1219,6 +1231,8 @@ def plot_max_depth_curve(frame_contact_components, contact_component_depth_maps,
     })
     df.to_csv(os.path.join(config.OUTPUT_DIRECTORY, 'max_depth_curve.csv'), index=False)
 
+    return mds, mdms, mdls
+
 
 def load_coord_from_file(path):
     coord_points = {}
@@ -1569,7 +1583,7 @@ def plot_cartilage_thickness_curve(
         frame_cart_meshes, frame_deepest_points, frame_ray_direction, bone_name: str = '', first2: bool = False):
     if frame_cart_meshes is None or len(frame_cart_meshes) == 0 or config.IGNORE_CARTILAGE:
         print("Cartilages ignored.")
-        return
+        return None
 
     n = len(frame_cart_meshes)
     left_x, right_x = np.zeros((n,), dtype=Real), np.zeros((n,), dtype=Real)
@@ -1609,6 +1623,31 @@ def plot_cartilage_thickness_curve(
         "Medial": medial,
         'Lateral': lateral,
     }).to_csv(os.path.join(config.OUTPUT_DIRECTORY, f'{bone_name}_cartilage_thickness.csv'), index=False)
+
+    return medial, lateral
+
+
+def plot_normed_max_depth_curve(thickness_curve, max_depth_curve, name: str):
+    if thickness_curve is None or max_depth_curve is None:
+        print("normed max depth curve no data")
+        return None
+    thickness_medial, thickness_lateral = thickness_curve
+    _, max_depth_medial, max_depth_lateral = max_depth_curve
+    n = min(len(thickness_medial), len(thickness_lateral), len(max_depth_medial), len(max_depth_lateral))
+    medial = np.zeros((n,), dtype=Real)
+    lateral = np.zeros((n,), dtype=Real)
+    for frame_index, (thickness_medial_i, thickness_lateral_i, max_depth_medial_i, max_depth_lateral_i) in \
+            enumerate(zip(thickness_medial, thickness_lateral, max_depth_medial, max_depth_lateral)):
+        medial[frame_index] = max_depth_medial_i / thickness_medial_i if thickness_medial_i != 0 else 0
+        lateral[frame_index] = max_depth_lateral_i / thickness_lateral_i if thickness_lateral_i != 0 else 0
+    fig, ax = plt.subplots()
+    ax.plot(medial, label='Medial')
+    ax.plot(lateral, label='Lateral')
+    ax.legend()
+    ax.set_title(f'Max Depth Curve - Normed by {name.capitalize()}')
+    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'{name}_normed_max_depth.jpg'))
+    plt.close(fig)
+    return medial, lateral
 
 
 if __name__ == "__main__":

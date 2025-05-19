@@ -56,6 +56,9 @@ GENERATE_ANIMATION = True
 GENERATE_DEPTH_CURVE = True
 GENERATE_DEPTH_MAP = True
 GENERATE_DOF_CURVES = True
+GENERATE_CART_THICKNESS_CURVE = True
+GENERATE_NORM_DEPTH_CURVE = True
+# 除以软骨厚度之和
 
 KNEE_SIDE = KneeSide.LEFT
 FEMUR_MODEL_FILE = 'acc_task/Femur.stl'
@@ -65,8 +68,8 @@ TIBIA_CARTILAGE_MODEL_FILE = 'acc_task/Tibia_Cart_Smooth.stl'
 FEATURE_POINT_FILE = 'acc_task/Coordination_Pt.txt'
 IGNORE_CARTILAGE = False
 
-MOVEMENT_DATA_FORMAT = MomentDataFormat.CSV
-MOVEMENT_DATA_FILE = 'acc_task/sical_test_rm.csv'
+MOVEMENT_DATA_FORMAT = MomentDataFormat.JSON
+MOVEMENT_DATA_FILE = 'interpolate/C_G_1st.txt'
 MOVEMENT_SMOOTH = False
 MOVEMENT_PICK_FRAMES: Optional[list[int]] = None
 MOVEMENT_INTERPOLATE_METHOD: InterpolateMethod = InterpolateMethod.CubicSpline

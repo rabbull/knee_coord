@@ -7,12 +7,13 @@ from scipy.interpolate import CubicSpline, Akima1DInterpolator, PchipInterpolato
 class AnimationCameraDirection(Enum):
     AUTO = 'auto'  # TODO
     FIX_TIBIA_FRONT = 'front'
-    FIX_TIBIA_L2M = 'medial'
-    FIX_TIBIA_M2L = 'lateral'
+    FIX_TIBIA_L2M = 'l2m'
+    FIX_TIBIA_M2L = 'm2l'
 
 
 class DepthDirection(Enum):
-    Z_AXIS = 'z_axis'
+    Z_AXIS_FEMUR = 'z_axis_femur'
+    Z_AXIS_TIBIA = 'z_axis_tibia'
     CONTACT_PLANE = 'contact_plane'
     VERTEX_NORMAL = 'vertex_normal'  # TODO
 
@@ -70,7 +71,7 @@ IGNORE_CARTILAGE = False
 
 MOVEMENT_DATA_FORMAT = MomentDataFormat.JSON
 MOVEMENT_DATA_FILE = 'interpolate/C_G_1st.txt'
-MOVEMENT_SMOOTH = False
+MOVEMENT_SMOOTH = True
 MOVEMENT_PICK_FRAMES: Optional[list[int]] = None
 MOVEMENT_INTERPOLATE_METHOD: InterpolateMethod = InterpolateMethod.CubicSpline
 
@@ -80,10 +81,11 @@ ANIMATION_BONE_COLOR_TIBIA = '#ffffff'
 ANIMATION_CARTILAGE_COLOR_FEMUR = '#00e5ff'
 ANIMATION_CARTILAGE_COLOR_TIBIA = '#8800ff'
 ANIMATION_RESOLUTION = (1000, 1000)
-ANIMATION_DIRECTION = AnimationCameraDirection.FIX_TIBIA_FRONT
+ANIMATION_CAMERA_DIRECTION: list[AnimationCameraDirection] = [AnimationCameraDirection.FIX_TIBIA_FRONT,
+                                                              AnimationCameraDirection.FIX_TIBIA_M2L]
 ANIMATION_LIGHT_INTENSITY = 3.0
 ANIMATION_SHOW_BONE_COORDINATE = True  # RED: x-axis; GREEN: y-axis; BLUE: z-axis
-ANIMATION_DURATION = 10 # bone movement animation length, in seconds
+ANIMATION_DURATION = 10  # bone movement animation length, in seconds
 
 DEPTH_MAP_BONE_COLOR_FEMUR = '#ffffff'
 DEPTH_MAP_BONE_COLOR_TIBIA = '#ffffff'
@@ -91,11 +93,11 @@ DEPTH_MAP_CARTILAGE_COLOR_FEMUR = '#1d16a1'
 DEPTH_MAP_CARTILAGE_COLOR_TIBIA = '#1d16a1'
 DEPTH_MAP_RESOLUTION = (1000, 1000)
 DEPTH_MAP_LIGHT_INTENSITY = 3.0
-DEPTH_DIRECTION: DepthDirection = DepthDirection.Z_AXIS
+DEPTH_DIRECTION: DepthDirection = DepthDirection.Z_AXIS_FEMUR
 DEPTH_BASE_BONE: BaseBone = BaseBone.TIBIA
 DEPTH_MAP_MARK_MAX = True
 DEPTH_MAP_DEPTH_THRESHOLD = 20
-DEPTH_MAP_DURATION = ANIMATION_DURATION # depth map animation length, in seconds
+DEPTH_MAP_DURATION = ANIMATION_DURATION  # depth map animation length, in seconds
 
 DOF_ROTATION_METHOD: DofRotationMethod = DofRotationMethod.JCS
 DOF_BASE_BONE: BaseBone = BaseBone.FEMUR

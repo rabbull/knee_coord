@@ -1,4 +1,4 @@
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Mapping, Any
 
 import numpy as np
 import trimesh
@@ -275,8 +275,8 @@ def my_axis(
     # append the sphere and three cylinders
     return [axis_origin, x_axis, y_axis, z_axis]
 
-def take_kth(k: int):
-    def res(s: Sequence):
+def take_kth(k: Any):
+    def res(s: Mapping[Any, Any]):
         return s[k]
 
     return res

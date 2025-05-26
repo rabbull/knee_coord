@@ -278,6 +278,11 @@ def main():
         task_frame_contact_component_depth_maps,
         task_frame_coordinates,
     ])
+    task_min_distance_curve = ctx.add_task('min_distance_curve', plot_min_distance_curve, deps=[
+        task_frame_bone_distance_map_origins,
+        task_frame_bone_distance_map_distances,
+        task_frame_coordinates,
+    ])
     task_dof_data_smoothed = ctx.add_task(
         'dof_data_smoothed',
         lambda *args: calc_dof(*args) if config.MOVEMENT_SMOOTH else None,
@@ -379,6 +384,8 @@ def main():
         task_area_curve()
     if config.DUMP_ALL_DATA:
         task_dump_all_data()
+    if config.GENERATE_DISTANCE_CURVE:
+        task_min_distance_curve()
 
 
 def gen_movement_animation(images: dict[config.AnimationCameraDirection, list[Image.Image]]):
@@ -450,7 +457,7 @@ def gen_contact_depth_map_background(extents, bone_meshes, coords, cart_meshes=N
     for base, extent in extents.items():
         bone_mesh = bone_meshes[base].copy()
         coord = coords[base]
-        cart_mesh = cart_meshes[base].copy() if cart_meshes else None
+        cart_mesh = cart_meshes[base].copy() if cart_meshes is not None and cart_meshes[base] is not None else None
         bone_mesh.visual.vertex_colors = hex_to_rgba1(config.DEPTH_MAP_BONE_COLOR_TIBIA)
         meshes = [bone_mesh]
         if cart_mesh is not None:
@@ -1214,6 +1221,62 @@ def do_plot_max_depth_curve(name, frame_contact_components, contact_component_de
         'max_depth_lateral': np.array(mdls, dtype=Real),
     })
     df.to_csv(os.path.join(config.OUTPUT_DIRECTORY, f'max_depth_curve_{name}.csv'), index=False)
+
+    return mds, mdms, mdls
+
+
+def plot_min_distance_curve(frame_bone_distance_origins, frame_bone_distances, frame_coordinates):
+    res = {}
+    for base, coords in frame_coordinates.items():
+        res[base] = do_plot_min_distance_curve(base.value, frame_bone_distance_origins, frame_bone_distances, coords)
+    return res
+
+
+def do_plot_min_distance_curve(name, frame_bone_distance_origins, frame_bone_distances, frame_coordinates):
+    if frame_bone_distance_origins is None or frame_bone_distances is None or frame_coordinates is None:
+        return None
+    n = len(frame_coordinates)
+    mdms = []
+    mdls = []
+    mds = []
+    for i in range(n):
+        mdm, mdl = 0, 0
+        coordination = frame_coordinates[i]
+        origins = frame_bone_distance_origins[i]
+        distances = frame_bone_distances[i]
+
+        origins_x = coordination.project(origins)[:, 0]
+        distances_left = distances[origins_x < 0]
+        distances_right = distances[origins_x > 0]
+        min_distance_left = np.min(distances_left) if len(distances_left) > 0 else 0
+        min_distance_right = np.min(distances_right) if len(distances_right) > 0 else 0
+        if config.KNEE_SIDE == config.KneeSide.LEFT:
+            mdm, mdl = min_distance_right, min_distance_left
+        else:
+            mdm, mdl = min_distance_left, min_distance_right
+        mdms.append(mdm)
+        mdls.append(mdl)
+        mds.append(min(mdm, mdl))
+
+    fig, ax = plt.subplots()
+    ax.plot(np.arange(n), mds)
+    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'min_distance_curve_{name}.png'))
+    plt.close(fig)
+
+    fig, ax = plt.subplots()
+    ax.plot(np.arange(n), mdms, label='Medial')
+    ax.plot(np.arange(n), mdls, label='Lateral')
+    ax.legend()
+    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'min_distance_curve_{name}_split.png'))
+    plt.close(fig)
+
+    df = pd.DataFrame({
+        'index': np.arange(n),
+        'min_distance': np.array(mds, dtype=Real),
+        'min_distance_medial': np.array(mdms, dtype=Real),
+        'min_distance_lateral': np.array(mdls, dtype=Real),
+    })
+    df.to_csv(os.path.join(config.OUTPUT_DIRECTORY, f'min_distance_curve_{name}.csv'), index=False)
 
     return mds, mdms, mdls
 

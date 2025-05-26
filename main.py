@@ -1628,6 +1628,9 @@ def smooth_transformations(raw: List[Transformation3D]) -> List[Transformation3D
 
 def plot_cartilage_thickness_curve(frame_cart_meshes, frame_deepest_points, frame_ray_direction, bone_name: str = '',
                                    first2: bool = False):
+    if frame_cart_meshes is None or len(frame_cart_meshes) == 0 or config.IGNORE_CARTILAGE:
+        print("Cartilages ignored.")
+        return None
     res = {}
     for base, deepest_points in frame_deepest_points.items():
         medial, lateral = do_plot_cartilage_thickness_curve(base.value, frame_cart_meshes, deepest_points,
@@ -1687,6 +1690,8 @@ def do_plot_cartilage_thickness_curve(
 
 
 def plot_normed_max_depth_curve(thickness_curve, max_depth_curve, name: str):
+    if thickness_curve is None or max_depth_curve is None:
+        return None
     res = {}
     for base in thickness_curve:
         res[base] = do_plot_normed_max_depth_curve(base.value, thickness_curve[base], max_depth_curve[base], name)

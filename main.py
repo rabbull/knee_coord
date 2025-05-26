@@ -12,6 +12,7 @@ from datetime import datetime
 import scipy.interpolate
 import pyrender as pyr
 import tqdm
+import trimesh
 from PIL import Image
 from matplotlib import pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
@@ -351,6 +352,14 @@ def main():
             task_max_depth_curve,
         ])
 
+    task_area_curve = ctx.add_task('area_curve', plot_contact_area_curve, deps=[
+        task_frame_contact_components, task_frame_coordinates, task_frame_ray_directions,
+    ])
+
+    task_dump_all_data = ctx.add_task('dump_all_data', dump_all_data, deps=[
+        task_dof_data_raw, task_dof_data_smoothed, task_area_curve, task_frame_deepest_points, task_max_depth_curve,
+    ])
+
     if config.GENERATE_CART_THICKNESS_CURVE:
         task_frame_femur_cart_thickness_curve()
         task_frame_tibia_cart_thickness_curve()
@@ -366,6 +375,10 @@ def main():
     if config.GENERATE_NORM_DEPTH_CURVE:
         task_tibia_normed_max_depth_curve()
         task_femur_normed_max_depth_curve()
+    if config.GENERATE_AREA_CURVE:
+        task_area_curve()
+    if config.DUMP_ALL_DATA:
+        task_dump_all_data()
 
 
 def gen_movement_animation(images: dict[config.AnimationCameraDirection, list[Image.Image]]):
@@ -1151,65 +1164,6 @@ def smooth_dof(dof_data):
     return dof_interpolate_data
 
 
-# def exp_y_rotation(efcm, etcm, tibia_coord):
-#     x = np.arange(-10, 10.1, 5)
-#     ax = trimesh.creation.axis(axis_length=20, axis_radius=0.1)
-#     ym = []
-#     yl = []
-#     scenes_y = []
-#     scenes_z = []
-#     for deg in x:
-#         arc = deg / 180 * np.pi
-#         t = etcm.copy()
-#         t.vertices = tibia_coord.project(t.vertices)
-#         f = efcm.copy()
-#         f.vertices = tibia_coord.project(f.vertices)
-#         f = f.apply_transform(Transformation3D().apply_rotation(
-#             Rotation.from_euler('y', arc)).mat_homo)
-#
-#         cs = f.intersection(t).split()
-#         scene = trimesh.Scene([ax] + cs)
-#         scene.set_camera(center=(0, 0, 0), distance=96)
-#         img_data = scene.save_image(visible=True)
-#         img_path = os.path.join(config.OUTPUT_DIRECTORY,
-#                                 f'rotate_{deg:.1f}_deg_z.png')
-#         with open(img_path, 'wb') as f:
-#             f.write(img_data)
-#         scenes_z.append(Image.open(img_path))
-#
-#         scene = trimesh.Scene([ax] + cs)
-#         scene.set_camera(center=(0, 0, 0), distance=96,
-#                          angles=(np.pi / 2, 0, 0))
-#         img_data = scene.save_image(visible=True)
-#         img_path = os.path.join(config.OUTPUT_DIRECTORY,
-#                                 f'rotate_{deg:.1f}_deg_y.png')
-#         with open(img_path, 'wb') as f:
-#             f.write(img_data)
-#         scenes_y.append(Image.open(img_path))
-#
-#         mds = [0]
-#         lds = [0]
-#         for c in cs:
-#             _, depths = do_calc_contact_depth_map(c, tibia_coord)
-#             if c.centroid[0] < 0:
-#                 mds += list(depths)
-#             else:
-#                 lds += list(depths)
-#         ym.append(max(mds))
-#         yl.append(max(lds))
-#
-#     plt.plot(x, ym, 'x-', label='Medial')
-#     plt.plot(x, yl, 'x-', label='Lateral')
-#     plt.xlabel('Degree')
-#     plt.ylabel('Max Depth')
-#     plt.legend()
-#
-#     gen_animation(scenes_z, os.path.join(
-#         config.OUTPUT_DIRECTORY, 'rotation_animation_z.gif'))
-#     gen_animation(scenes_y, os.path.join(
-#         config.OUTPUT_DIRECTORY, 'rotation_animation_y.gif'))
-
-
 def plot_max_depth_curve(frame_contact_components, contact_component_depth_maps, frame_coordinates):
     res = {}
     for base, coords in frame_coordinates.items():
@@ -1673,11 +1627,12 @@ def plot_normed_max_depth_curve(thickness_curve, max_depth_curve, name: str):
     res = {}
     for base in thickness_curve:
         res[base] = do_plot_normed_max_depth_curve(base.value, thickness_curve[base], max_depth_curve[base], name)
+    return res
 
 
 def do_plot_normed_max_depth_curve(base_name: str, thickness_curve, max_depth_curve, name: str):
     if thickness_curve is None or max_depth_curve is None:
-        print("normed max depth curve no data")
+        print("normed max depth curve no data", file=sys.stderr)
         return None
     thickness_medial, thickness_lateral = thickness_curve
     _, max_depth_medial, max_depth_lateral = max_depth_curve
@@ -1696,6 +1651,111 @@ def do_plot_normed_max_depth_curve(base_name: str, thickness_curve, max_depth_cu
     fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'{name}_normed_max_depth_{base_name}.jpg'))
     plt.close(fig)
     return medial, lateral
+
+
+def plot_contact_area_curve(
+        frame_contact_components: list[list[trimesh.Trimesh]],
+        frame_coordinates: dict[config.BaseBone, list[BoneCoordination]],
+        frame_ray_directions: list[np.ndarray],
+):
+    res = {}
+    for base in frame_coordinates:
+        res[base] = do_plot_contact_area_curve(base.value, frame_contact_components, frame_coordinates[base],
+                                               frame_ray_directions)
+    return res
+
+
+def do_plot_contact_area_curve(
+        name: str,
+        frame_contact_components: list[list[trimesh.Trimesh]],
+        frame_coordinates: list[BoneCoordination],
+        frame_ray_directions: list[np.ndarray],
+):
+    medial, lateral = [], []
+    for frame_index, (contact_components, coordination, ray_direction) \
+            in enumerate(zip(frame_contact_components, frame_coordinates, frame_ray_directions)):
+        if len(contact_components) == 0:
+            medial.append(0)
+            lateral.append(0)
+            continue
+
+        medial_area, lateral_area = 0, 0
+        for contact_component in contact_components:
+            dot = contact_component.face_normals @ ray_direction
+            visible_faces = np.where(dot < 0)[0]
+            if len(visible_faces) == 0:
+                continue
+            visible_triangles = contact_component.triangles[visible_faces]
+            projected_triangles = coordination.project(visible_triangles)
+
+            def area_of_tri(tri):
+                a, b = tri[1] - tri[0], tri[2] - tri[0]
+                return 0.5 * np.linalg.norm(np.cross(a, b))
+
+            total_area = np.sum(np.array([area_of_tri(tri) for tri in projected_triangles]))
+
+            component_pos = coordination.project(contact_component.centroid)[0]
+            if (component_pos > 0 and config.KNEE_SIDE == config.KneeSide.LEFT) \
+                    or (component_pos < 0 and config.KNEE_SIDE == config.KneeSide.RIGHT):
+                medial_area += total_area
+            else:
+                lateral_area += total_area
+        medial.append(medial_area)
+        lateral.append(lateral_area)
+
+    fig, ax = plt.subplots()
+    ax.plot(medial, label='Medial')
+    ax.plot(lateral, label='Lateral')
+    ax.legend()
+    ax.set_title(f'Contact Area Curve - Base {name.capitalize()}')
+    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'contact_area_base_{name}.jpg'))
+    plt.close(fig)
+
+    return medial, lateral
+
+
+def dump_all_data(
+        task_dof_data_raw, task_dof_data_smoothed, task_area_curve, task_frame_deepest_points, task_max_depth_curve,
+):
+    dof = task_dof_data_raw
+    if config.MOVEMENT_SMOOTH:
+        dof = task_dof_data_smoothed
+    y_tx, y_ty, y_tz, y_rx, y_ry, y_rz = dof
+    n = len(y_tx)
+    x = np.arange(1, n + 1)
+    for base in [config.BaseBone.FEMUR, config.BaseBone.TIBIA]:
+        area_medial, area_lateral = task_area_curve[base]
+        print(len(area_medial), area_medial)
+        deepest_points = task_frame_deepest_points[base]
+        max_depth, max_depth_medial, max_depth_lateral = task_max_depth_curve[base]
+        csv_path = os.path.join(config.OUTPUT_DIRECTORY, f'{base.value}_all_data.csv')
+        with open(csv_path, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL, escapechar='\\', )
+            writer.writerow(['Frame', 'Translation X', 'Translation Y', 'Translation Z',
+                             'Rotation X', 'Rotation Y', 'Rotation Z', 'Area Medial', 'Area Lateral',
+                             'Deepest Point Medial X', 'Deepest Point Medial X', 'Deepest Point Medial Z',
+                             'Depth', 'Depth Medial', 'Depth Lateral'])
+            for i in range(n):
+                writer.writerow([
+                    x[i],
+                    y_tx[i],
+                    y_ty[i],
+                    y_tz[i],
+                    y_rx[i],
+                    y_ry[i],
+                    y_rz[i],
+                    area_medial[i] if area_medial[i] is not None else 0,
+                    area_lateral[i] if area_lateral[i] is not None else 0,
+                    deepest_points[i][0][0] if deepest_points[i] and deepest_points[i][0] is not None else 'None',
+                    deepest_points[i][0][1] if deepest_points[i] and deepest_points[i][0] is not None else 'None',
+                    deepest_points[i][0][2] if deepest_points[i] and deepest_points[i][0] is not None else 'None',
+                    deepest_points[i][1][0] if deepest_points[i] and deepest_points[i][1] is not None else 'None',
+                    deepest_points[i][1][1] if deepest_points[i] and deepest_points[i][1] is not None else 'None',
+                    deepest_points[i][1][2] if deepest_points[i] and deepest_points[i][1] is not None else 'None',
+                    max_depth[i] if max_depth[i] is not None else 0,
+                    max_depth_medial[i] if max_depth_medial[i] is not None else 0,
+                    max_depth_lateral[i] if max_depth_lateral[i] is not None else 0,
+                ])
 
 
 if __name__ == "__main__":

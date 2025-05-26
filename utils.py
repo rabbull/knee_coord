@@ -96,16 +96,13 @@ class Transformation3D(object):
 
     def transform(self, x):
         x = np.asarray(x)
-        if x.ndim == 1 and x.shape[0] == 3:
-            x_hom = np.hstack([x, 1])
-            x_transformed = self._h @ x_hom
-            return x_transformed[:3]
-        elif x.ndim == 2 and x.shape[1] == 3:
-            x_hom = np.hstack([x, np.ones((x.shape[0], 1))])
-            x_transformed = (self._h @ x_hom.T).T
-            return x_transformed[:, :3]
-        else:
-            raise ValueError
+        if x.shape[-1] != 3:
+            raise ValueError(f"Expected last dimension to be 3, got {x.shape[-1]}")
+        orig_shape = x.shape[:-1]
+        x_flat = x.reshape(-1, 3)
+        x_hom = np.hstack([x_flat, np.ones((x_flat.shape[0], 1))])
+        x_transformed = (self._h @ x_hom.T).T
+        return x_transformed[:, :3].reshape(*orig_shape, 3)
 
     def inverse(self) -> 'Transformation3D':
         return Transformation3D(np.linalg.inv(self._h))

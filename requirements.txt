@@ -7,3 +7,5 @@ pyrender
 tqdm
 av
 pandas
+vtk
+pyglet<2

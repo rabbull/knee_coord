@@ -40,7 +40,7 @@ class InterpolateMethod(Enum):
     Pchip = 'Pchip', PchipInterpolator
 
 
-class BaseBone(Enum):
+class BoneType(Enum):
     FEMUR = 'femur'
     TIBIA = 'tibia'
 
@@ -69,7 +69,7 @@ FEMUR_CARTILAGE_MODEL_FILE = 'acc_task/Femur_Cart_Smooth.stl'
 TIBIA_MODEL_FILE = 'acc_task/Tibia.stl'
 TIBIA_CARTILAGE_MODEL_FILE = 'acc_task/Tibia_Cart_Smooth.stl'
 FEATURE_POINT_FILE = 'acc_task/Coordination_Pt.txt'
-IGNORE_CARTILAGE = True
+IGNORE_CARTILAGE = False
 
 MOVEMENT_DATA_FORMAT = MomentDataFormat.CSV
 MOVEMENT_DATA_FILE = 'model_0526/Bill_walking_0.5_Automation.csv'
@@ -96,13 +96,13 @@ DEPTH_MAP_CARTILAGE_COLOR_TIBIA = '#1d16a1'
 DEPTH_MAP_RESOLUTION = (1000, 1000)
 DEPTH_MAP_LIGHT_INTENSITY = 3.0
 DEPTH_DIRECTION: DepthDirection = DepthDirection.Z_AXIS_FEMUR
-DEPTH_BASE_BONE: BaseBone = BaseBone.FEMUR
+DEPTH_BASE_BONE: BoneType = BoneType.FEMUR
 DEPTH_MAP_MARK_MAX = True
 DEPTH_MAP_DEPTH_THRESHOLD = 20
 DEPTH_MAP_DURATION = ANIMATION_DURATION  # depth map animation length, in seconds
 
 DOF_ROTATION_METHOD: DofRotationMethod = DofRotationMethod.JCS
-DOF_BASE_BONE: BaseBone = BaseBone.FEMUR
+DOF_BASE_BONE: BoneType = BoneType.FEMUR
 
 # WIP TASKS, DO NOT ENABLE
 Y_ROTATE_EXP = False

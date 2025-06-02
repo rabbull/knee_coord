@@ -45,7 +45,9 @@ class BoneCoordination:
         self._extra = {}
 
     @classmethod
-    def from_feature_points(cls, side, medial_point, lateral_point, proximal_point, distal_point, extra=None) -> Self:
+    def from_feature_points(cls, side: config.KneeSide, medial_point: np.ndarray, lateral_point: np.ndarray,
+                            proximal_point: np.ndarray, distal_point: np.ndarray, bone_type: config.BoneType,
+                            extra=None) -> Self:
         self = cls()
 
         match side:
@@ -60,19 +62,39 @@ class BoneCoordination:
         self._origin = (left_point + right_point) / 2
         self._t.set_translation(self._origin)
 
-        raw_x = right_point - left_point
-        unit_x = normalize(raw_x)
-        raw_z = distal_point - proximal_point
-        raw_z_proj_x = np.dot(raw_z, unit_x) * unit_x
-        fixed_z = raw_z - raw_z_proj_x
-        unit_z = normalize(fixed_z)
-        raw_y = np.cross(unit_z, unit_x)
-        unit_y = normalize(raw_y)
-        mat_r = np.column_stack((unit_x, unit_y, unit_z))
-        self._t.set_rotation(Rotation.from_matrix(mat_r))
+        match bone_type:
+            case config.BoneType.FEMUR:
+                f = self.__set_rotation_femur
+            case config.BoneType.TIBIA:
+                f = self.__set_rotation_tibia
+            case _:
+                raise ValueError
+        f(left_point, right_point, proximal_point, distal_point)
 
         self._extra = extra if extra else {}
         return self
+
+    def __set_rotation_femur(self, left, right, proximal, distal):
+        raw_x = right - left
+        unit_x = normalize(raw_x)
+        raw_z = distal - proximal
+        raw_y = np.cross(raw_z, unit_x)
+        unit_y = normalize(raw_y)
+        unit_z = normalize(np.cross(unit_x, unit_y))
+
+        mat_r = np.column_stack((unit_x, unit_y, unit_z))
+        self._t.set_rotation(Rotation.from_matrix(mat_r))
+
+    def __set_rotation_tibia(self, left, right, proximal, distal):
+        raw_z = distal - proximal
+        unit_z = normalize(raw_z)
+        raw_x = right - left
+        raw_y = np.cross(unit_z, raw_x)
+        unit_y = normalize(raw_y)
+        unit_x = normalize(np.cross(unit_y, unit_z))
+
+        mat_r = np.column_stack((unit_x, unit_y, unit_z))
+        self._t.set_rotation(Rotation.from_matrix(mat_r))
 
     @classmethod
     def from_translation_and_quat(cls, translation, quat, extra=None) -> Self:
@@ -127,14 +149,14 @@ def main():
         ctx.add_task('original_coordinates_tibia', take_kth(1), deps=[task_original_coordinates])
 
     task_depth_map_base_meshes = ctx.add_task('depth_map_base_meshes',
-                                              lambda fm, tm: {config.BaseBone.FEMUR: fm, config.BaseBone.TIBIA: tm},
+                                              lambda fm, tm: {config.BoneType.FEMUR: fm, config.BoneType.TIBIA: tm},
                                               deps=[task_femur_mesh, task_tibia_mesh])
     task_depth_map_base_coords = ctx.add_task('depth_map_base_coords',
-                                              lambda fm, tm: {config.BaseBone.FEMUR: fm, config.BaseBone.TIBIA: tm},
+                                              lambda fm, tm: {config.BoneType.FEMUR: fm, config.BoneType.TIBIA: tm},
                                               deps=[task_original_coordinates_femur, task_original_coordinates_tibia])
     task_depth_map_base_cart_meshes = ctx.add_task('depth_map_base_cart_meshes',
-                                                   lambda fm, tm: {config.BaseBone.FEMUR: fm,
-                                                                   config.BaseBone.TIBIA: tm},
+                                                   lambda fm, tm: {config.BoneType.FEMUR: fm,
+                                                                   config.BoneType.TIBIA: tm},
                                                    deps=[task_femur_cart_mesh, task_tibia_cart_mesh])
 
     task_extents = ctx.add_task('extents', calc_extents, deps=[task_depth_map_base_meshes, task_depth_map_base_coords])
@@ -176,8 +198,8 @@ def main():
     task_frame_bone_transformations_femur = task_frame_bone_transformations_femur_smoothed if config.MOVEMENT_SMOOTH else task_frame_bone_transformations_femur_raw
     task_frame_bone_transformations_tibia = task_frame_bone_transformations_tibia_smoothed if config.MOVEMENT_SMOOTH else task_frame_bone_transformations_tibia_raw
     task_frame_bone_transformations = ctx.add_task('frame_bone_transformations',
-                                                   lambda fm, tm: {config.BaseBone.FEMUR: fm,
-                                                                   config.BaseBone.TIBIA: tm},
+                                                   lambda fm, tm: {config.BoneType.FEMUR: fm,
+                                                                   config.BoneType.TIBIA: tm},
                                                    deps=[task_frame_bone_transformations_femur,
                                                          task_frame_bone_transformations_tibia])
 
@@ -193,9 +215,9 @@ def main():
     #     ])
     task_frame_coordinates = ctx.add_task('frame_coordinates', calc_frame_coordinates,
                                           deps=[task_depth_map_base_coords, task_frame_bone_transformations])
-    task_frame_femur_coordinates = ctx.add_task('frame_femur_coordinates', take_kth(config.BaseBone.FEMUR),
+    task_frame_femur_coordinates = ctx.add_task('frame_femur_coordinates', take_kth(config.BoneType.FEMUR),
                                                 deps=[task_frame_coordinates])
-    task_frame_tibia_coordinates = ctx.add_task('frame_tibia_coordinates', take_kth(config.BaseBone.TIBIA),
+    task_frame_tibia_coordinates = ctx.add_task('frame_tibia_coordinates', take_kth(config.BoneType.TIBIA),
                                                 deps=[task_frame_coordinates])
 
     task_frame_femur_meshes = ctx.add_task('frame_femur_meshes', transform_frame_mesh,
@@ -229,7 +251,7 @@ def main():
                                             ])
 
     if config.DEPTH_DIRECTION == config.DepthDirection.Z_AXIS_TIBIA or config.DEPTH_DIRECTION == config.DepthDirection.Z_AXIS_FEMUR:
-        base = config.BaseBone.TIBIA if config.DEPTH_DIRECTION == config.DepthDirection.Z_AXIS_TIBIA else config.BaseBone.FEMUR
+        base = config.BoneType.TIBIA if config.DEPTH_DIRECTION == config.DepthDirection.Z_AXIS_TIBIA else config.BoneType.FEMUR
 
         def job(_, frame_coordinates):
             return [coord.t.unit_z for coord in frame_coordinates[base]]
@@ -341,19 +363,29 @@ def main():
                          task_frame_deepest_points,
                          task_frame_ray_directions
                      ])
+    task_frame_cart_thickness_curve = \
+        ctx.add_task('frame_cart_thickness', plot_cartilage_thickness_curve_sum,
+                     deps=[task_frame_femur_cart_thickness_curve, task_frame_tibia_cart_thickness_curve])
 
-    task_femur_normed_max_depth_curve = ctx.add_task(
-        'femur_normed_max_depth_curve',
-        functools.partial(plot_normed_max_depth_curve, name='femur'),
+    task_femur_deformity_curve = ctx.add_task(
+        'femur_deformity_curve',
+        functools.partial(plot_deformity_curve, name='femur'),
         deps=[
             task_frame_femur_cart_thickness_curve,
             task_max_depth_curve,
         ])
-    task_tibia_normed_max_depth_curve = ctx.add_task(
-        'tibia_normed_max_depth_curve',
-        functools.partial(plot_normed_max_depth_curve, name='tibia'),
+    task_tibia_deformity_curve = ctx.add_task(
+        'tibia_deformity_curve',
+        functools.partial(plot_deformity_curve, name='tibia'),
         deps=[
             task_frame_tibia_cart_thickness_curve,
+            task_max_depth_curve,
+        ])
+    task_deformity_curve = ctx.add_task(
+        'deformity_curve',
+        functools.partial(plot_deformity_curve, name='sum'),
+        deps=[
+            task_frame_cart_thickness_curve,
             task_max_depth_curve,
         ])
 
@@ -378,8 +410,8 @@ def main():
         task_plot_dof_curves()
         task_dump_dof()
     if config.GENERATE_NORM_DEPTH_CURVE:
-        task_tibia_normed_max_depth_curve()
-        task_femur_normed_max_depth_curve()
+        task_tibia_deformity_curve()
+        task_femur_deformity_curve()
     if config.GENERATE_AREA_CURVE:
         task_area_curve()
     if config.DUMP_ALL_DATA:
@@ -393,7 +425,7 @@ def gen_movement_animation(images: dict[config.AnimationCameraDirection, list[Im
         gen_animation(frames, name=f'animation_{direction.value}', duration=config.ANIMATION_DURATION)
 
 
-def gen_depth_map_animation(images: dict[config.BaseBone, list[Image.Image]]):
+def gen_depth_map_animation(images: dict[config.BoneType, list[Image.Image]]):
     for direction, frames in images.items():
         gen_animation(frames, name=f'depth_map_{direction.value}', duration=config.DEPTH_MAP_DURATION)
 
@@ -464,14 +496,14 @@ def gen_contact_depth_map_background(extents, bone_meshes, coords, cart_meshes=N
             cart_mesh.visual.vertex_colors = hex_to_rgba1(config.DEPTH_MAP_CARTILAGE_COLOR_TIBIA)
             meshes.append(cart_mesh)
         match base:
-            case config.BaseBone.TIBIA:
+            case config.BoneType.TIBIA:
                 pose = np.array([
                     [1, 0, 0, 0],
                     [0, 1, 0, 0],
                     [0, 0, 1, 1000],
                     [0, 0, 0, 1],
                 ])
-            case config.BaseBone.FEMUR:
+            case config.BoneType.FEMUR:
                 pose = np.array([
                     [-1, 0, 0, 0],
                     [0, 1, 0, 0],
@@ -481,7 +513,7 @@ def gen_contact_depth_map_background(extents, bone_meshes, coords, cart_meshes=N
             case _:
                 raise ValueError(f'Unknown bone: {base}')
         background = gen_orthographic_photo(meshes, coord, res, extent[1], extent[1], pose, intensity)
-        if base == config.BaseBone.FEMUR:
+        if base == config.BoneType.FEMUR:
             background = background.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
         backgrounds[base] = background
 
@@ -898,7 +930,7 @@ def load_frame_bone_coordinates_csv() -> list[tuple[BoneCoordination, BoneCoordi
     return coords
 
 
-def calc_extents(meshes: dict[config.BaseBone, trimesh.Trimesh], coords: dict[config.BaseBone, BoneCoordination],
+def calc_extents(meshes: dict[config.BoneType, trimesh.Trimesh], coords: dict[config.BoneType, BoneCoordination],
                  padding=5):
     bases = set(meshes.keys()).intersection(coords.keys())
     extents = {}
@@ -999,9 +1031,9 @@ def calc_dof(original_coordinates_femur, original_coordinates_tibia,
         fc.t.apply_transformation(ft)
         tc.t.apply_transformation(tt)
 
-        if config.DOF_BASE_BONE == config.BaseBone.FEMUR:
+        if config.DOF_BASE_BONE == config.BoneType.FEMUR:
             r = tc.t.relative_to(fc.t)
-        elif config.DOF_BASE_BONE == config.BaseBone.TIBIA:
+        elif config.DOF_BASE_BONE == config.BoneType.TIBIA:
             r = fc.t.relative_to(tc.t)
         else:
             raise NotImplementedError(f'unknown base bone: {config.DOF_BASE_BONE}')
@@ -1302,19 +1334,21 @@ def load_coord_from_file(path):
                                                        femur_medial_point,
                                                        femur_lateral_point,
                                                        femur_distal_point,
-                                                       femur_proximal_point)
+                                                       femur_proximal_point,
+                                                       config.BoneType.FEMUR)
     tibia_coord = BoneCoordination.from_feature_points(config.KNEE_SIDE,
                                                        tibia_medial_point,
                                                        tibia_lateral_point,
                                                        tibia_distal_point,
-                                                       tibia_proximal_point)
+                                                       tibia_proximal_point,
+                                                       config.BoneType.TIBIA)
     return femur_coord, tibia_coord
 
 
 def calc_contact_depth_map(frame_ray_directions, frame_contact_components):
     res = []
     for direction, components in tqdm.tqdm(zip(frame_ray_directions, frame_contact_components)):
-        if config.DEPTH_BASE_BONE == config.BaseBone.FEMUR:
+        if config.DEPTH_BASE_BONE == config.BoneType.FEMUR:
             direction = -direction
         depth_maps = []
         for component in components:
@@ -1352,9 +1386,9 @@ def do_calc_contact_depth_map(contact_component, v):
 def calc_bone_distance_map(fcs, tcs, fs, ts, vs):
     if fcs is None or tcs is None or any(fc is None for fc in fcs) or any(tc is None for tc in tcs):
         fcs, tcs = fs, ts  # use bone instead
-    if config.DEPTH_BASE_BONE == config.BaseBone.FEMUR:
+    if config.DEPTH_BASE_BONE == config.BoneType.FEMUR:
         return [do_calc_bone_distance_map(t, f, -v) for f, t, v in tqdm.tqdm(zip(fcs, tcs, vs))]
-    elif config.DEPTH_BASE_BONE == config.BaseBone.TIBIA:
+    elif config.DEPTH_BASE_BONE == config.BoneType.TIBIA:
         return [do_calc_bone_distance_map(f, t, v) for f, t, v in tqdm.tqdm(zip(fcs, tcs, vs))]
     raise NotImplementedError(f'Unknown base bone: {config.DEPTH_BASE_BONE}')
 
@@ -1667,11 +1701,12 @@ def do_plot_cartilage_thickness_curve(
                     indices = indices[-2:]
                 thickness[point_index] = np.linalg.norm(hits[indices[0]] - hits[indices[1]])
         left_x[frame_index], right_x[frame_index] = thickness
-    fig, ax = plt.subplots()
 
     medial, lateral = right_x, left_x
     if config.KneeSide == config.KneeSide.RIGHT:
         medial, lateral = lateral, medial
+
+    fig, ax = plt.subplots()
     ax.plot(medial, label='Medial')
     ax.plot(lateral, label='Lateral')
     ax.legend()
@@ -1689,16 +1724,34 @@ def do_plot_cartilage_thickness_curve(
     return medial, lateral
 
 
-def plot_normed_max_depth_curve(thickness_curve, max_depth_curve, name: str):
+def plot_cartilage_thickness_curve_sum(tibia_cart_thickness, femur_cart_thickness):
+    res = {}
+    for base in tibia_cart_thickness:
+        tibia_medial, tibia_lateral = tibia_cart_thickness[base]
+        femur_medial, femur_lateral = femur_cart_thickness[base]
+        medial = tibia_medial + femur_medial
+        lateral = tibia_lateral + femur_lateral
+        fig, ax = plt.subplots()
+        ax.plot(medial, label='Medial')
+        ax.plot(lateral, label='Lateral')
+        ax.legend()
+        ax.set_title(f'Cartilage Thickness Curve - Sum - Base {base}')
+        fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'cartilage_thickness_base_{base}_sum.jpg'))
+        plt.close(fig)
+        res[base] = (medial, lateral)
+    return res
+
+
+def plot_deformity_curve(thickness_curve, max_depth_curve, name: str):
     if thickness_curve is None or max_depth_curve is None:
         return None
     res = {}
     for base in thickness_curve:
-        res[base] = do_plot_normed_max_depth_curve(base.value, thickness_curve[base], max_depth_curve[base], name)
+        res[base] = do_plot_deformity_curve(base.value, thickness_curve[base], max_depth_curve[base], name)
     return res
 
 
-def do_plot_normed_max_depth_curve(base_name: str, thickness_curve, max_depth_curve, name: str):
+def do_plot_deformity_curve(base_name: str, thickness_curve, max_depth_curve, name: str):
     if thickness_curve is None or max_depth_curve is None:
         print("normed max depth curve no data", file=sys.stderr)
         return None
@@ -1709,13 +1762,14 @@ def do_plot_normed_max_depth_curve(base_name: str, thickness_curve, max_depth_cu
     lateral = np.zeros((n,), dtype=Real)
     for frame_index, (thickness_medial_i, thickness_lateral_i, max_depth_medial_i, max_depth_lateral_i) in \
             enumerate(zip(thickness_medial, thickness_lateral, max_depth_medial, max_depth_lateral)):
-        medial[frame_index] = max_depth_medial_i / thickness_medial_i if thickness_medial_i != 0 else 0
-        lateral[frame_index] = max_depth_lateral_i / thickness_lateral_i if thickness_lateral_i != 0 else 0
+        thickness = thickness_medial_i + thickness_lateral_i
+        medial[frame_index] = safe_div(max_depth_medial_i, thickness)
+        lateral[frame_index] = safe_div(max_depth_lateral_i, thickness)
     fig, ax = plt.subplots()
     ax.plot(medial, label='Medial')
     ax.plot(lateral, label='Lateral')
     ax.legend()
-    ax.set_title(f'Max Depth Curve - Normed by {name.capitalize()} - Base {base_name}')
+    ax.set_title(f'Deformity Curve - Normed by {name.capitalize()} - Base {base_name}')
     fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'{name}_normed_max_depth_{base_name}.jpg'))
     plt.close(fig)
     return medial, lateral
@@ -1723,13 +1777,12 @@ def do_plot_normed_max_depth_curve(base_name: str, thickness_curve, max_depth_cu
 
 def plot_contact_area_curve(
         frame_contact_components: list[list[trimesh.Trimesh]],
-        frame_coordinates: dict[config.BaseBone, list[BoneCoordination]],
+        frame_coordinates: dict[config.BoneType, list[BoneCoordination]],
         frame_ray_directions: list[np.ndarray],
 ):
     res = {}
     for base in frame_coordinates:
-        res[base] = do_plot_contact_area_curve(base.value, frame_contact_components, frame_coordinates[base],
-                                               frame_ray_directions)
+        res[base] = do_plot_contact_area_curve(base.value, frame_contact_components, frame_coordinates[base])
     return res
 
 
@@ -1737,11 +1790,10 @@ def do_plot_contact_area_curve(
         name: str,
         frame_contact_components: list[list[trimesh.Trimesh]],
         frame_coordinates: list[BoneCoordination],
-        frame_ray_directions: list[np.ndarray],
 ):
     medial, lateral = [], []
-    for frame_index, (contact_components, coordination, ray_direction) \
-            in enumerate(zip(frame_contact_components, frame_coordinates, frame_ray_directions)):
+    for frame_index, (contact_components, coordination) \
+            in enumerate(zip(frame_contact_components, frame_coordinates)):
         if len(contact_components) == 0:
             medial.append(0)
             lateral.append(0)
@@ -1749,25 +1801,13 @@ def do_plot_contact_area_curve(
 
         medial_area, lateral_area = 0, 0
         for contact_component in contact_components:
-            dot = contact_component.face_normals @ ray_direction
-            visible_faces = np.where(dot < 0)[0]
-            if len(visible_faces) == 0:
-                continue
-            visible_triangles = contact_component.triangles[visible_faces]
-            projected_triangles = coordination.project(visible_triangles)
-
-            def area_of_tri(tri):
-                a, b = tri[1] - tri[0], tri[2] - tri[0]
-                return 0.5 * np.linalg.norm(np.cross(a, b))
-
-            total_area = np.sum(np.array([area_of_tri(tri) for tri in projected_triangles]))
-
-            component_pos = coordination.project(contact_component.centroid)[0]
-            if (component_pos > 0 and config.KNEE_SIDE == config.KneeSide.LEFT) \
-                    or (component_pos < 0 and config.KNEE_SIDE == config.KneeSide.RIGHT):
-                medial_area += total_area
+            area = contact_component.area
+            x_pos = coordination.project(contact_component.centroid)[0]
+            if (x_pos > 0 and config.KNEE_SIDE == config.KneeSide.LEFT) \
+                    or (x_pos < 0 and config.KNEE_SIDE == config.KneeSide.RIGHT):
+                medial_area += area
             else:
-                lateral_area += total_area
+                lateral_area += area
         medial.append(medial_area)
         lateral.append(lateral_area)
 
@@ -1791,9 +1831,8 @@ def dump_all_data(
     y_tx, y_ty, y_tz, y_rx, y_ry, y_rz = dof
     n = len(y_tx)
     x = np.arange(1, n + 1)
-    for base in [config.BaseBone.FEMUR, config.BaseBone.TIBIA]:
+    for base in [config.BoneType.FEMUR, config.BoneType.TIBIA]:
         area_medial, area_lateral = task_area_curve[base]
-        print(len(area_medial), area_medial)
         deepest_points = task_frame_deepest_points[base]
         max_depth, max_depth_medial, max_depth_lateral = task_max_depth_curve[base]
         csv_path = os.path.join(config.OUTPUT_DIRECTORY, f'{base.value}_all_data.csv')

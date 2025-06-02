@@ -284,3 +284,6 @@ def list_take_kth(k: int):
         return [e[k] if e is not None else None for e in s] if s is not None else None
 
     return res
+
+def safe_div(a, b, default = 0.0):
+    return a / b if b != 0 else default

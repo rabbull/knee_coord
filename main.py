@@ -9,6 +9,7 @@ from typing import Any, Self, List, Tuple
 import csv
 from datetime import datetime
 
+import numpy as np
 import scipy.interpolate
 import pyrender as pyr
 import tqdm
@@ -16,6 +17,7 @@ import trimesh
 from PIL import Image
 from matplotlib import pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+from pyrender import RenderFlags
 from scipy.interpolate import griddata
 from scipy.linalg import svd
 from scipy.spatial import cKDTree
@@ -164,6 +166,9 @@ def main():
     task_depth_map_background = ctx.add_task('depth_map_background', gen_contact_depth_map_background, deps=[
         task_depth_map_extent, task_depth_map_base_meshes, task_depth_map_base_coords, task_depth_map_base_cart_meshes,
     ])
+    task_depth_map_heatmap_mask = ctx.add_task('depth_map_heatmap_mask', gen_contact_depth_map_mask, deps=[
+        task_depth_map_extent, task_depth_map_base_meshes, task_depth_map_base_coords, task_depth_map_base_cart_meshes,
+    ])
 
     match config.MOVEMENT_DATA_FORMAT:
         case config.MomentDataFormat.CSV:
@@ -203,16 +208,6 @@ def main():
                                                    deps=[task_frame_bone_transformations_femur,
                                                          task_frame_bone_transformations_tibia])
 
-    # task_frame_femur_coordinates = \
-    #     ctx.add_task('frame_femur_coordinates', do_calc_frame_coordinates, deps=[
-    #         task_original_coordinates_femur,
-    #         task_frame_bone_transformations_femur,
-    #     ])
-    # task_frame_tibia_coordinates = \
-    #     ctx.add_task('frame_tibia_coordinates', do_calc_frame_coordinates, deps=[
-    #         task_original_coordinates_tibia,
-    #         task_frame_bone_transformations_tibia,
-    #     ])
     task_frame_coordinates = ctx.add_task('frame_coordinates', calc_frame_coordinates,
                                           deps=[task_depth_map_base_coords, task_frame_bone_transformations])
     task_frame_femur_coordinates = ctx.add_task('frame_femur_coordinates', take_kth(config.BoneType.FEMUR),
@@ -334,6 +329,7 @@ def main():
                                                  deps=[
                                                      task_depth_map_extent,
                                                      task_depth_map_background,
+                                                     task_depth_map_heatmap_mask,
                                                      task_frame_coordinates,
                                                      task_frame_bone_distance_map_origins,
                                                      task_frame_bone_distance_map_distances,
@@ -490,10 +486,10 @@ def gen_contact_depth_map_background(extents, bone_meshes, coords, cart_meshes=N
         bone_mesh = bone_meshes[base].copy()
         coord = coords[base]
         cart_mesh = cart_meshes[base].copy() if cart_meshes is not None and cart_meshes[base] is not None else None
-        bone_mesh.visual.vertex_colors = hex_to_rgba1(config.DEPTH_MAP_BONE_COLOR_TIBIA)
+        bone_mesh.visual.vertex_colors = hex_to_rgba1(config.DEPTH_MAP_BONE_COLOR)
         meshes = [bone_mesh]
         if cart_mesh is not None:
-            cart_mesh.visual.vertex_colors = hex_to_rgba1(config.DEPTH_MAP_CARTILAGE_COLOR_TIBIA)
+            cart_mesh.visual.vertex_colors = hex_to_rgba1(config.DEPTH_MAP_CARTILAGE_COLOR)
             meshes.append(cart_mesh)
         match base:
             case config.BoneType.TIBIA:
@@ -518,6 +514,45 @@ def gen_contact_depth_map_background(extents, bone_meshes, coords, cart_meshes=N
         backgrounds[base] = background
 
     return backgrounds
+
+
+def gen_contact_depth_map_mask(extents, bone_meshes, coords, cart_meshes=None):
+    res = config.DEPTH_MAP_RESOLUTION
+    masks = {}
+    for base, extent in extents.items():
+        bone_mesh = bone_meshes[base].copy()
+        coord = coords[base]
+        cart_mesh = cart_meshes[base].copy() if cart_meshes is not None and cart_meshes[base] is not None else None
+        bone_mesh.visual.vertex_colors = hex_to_rgba1('#FFFFFF')
+
+        meshes = [bone_mesh]
+        if cart_mesh is not None:
+            cart_mesh.visual.vertex_colors = hex_to_rgba1('#000000')
+            meshes.append(cart_mesh)
+
+        match base:
+            case config.BoneType.TIBIA:
+                pose = np.array([
+                    [1, 0, 0, 0],
+                    [0, 1, 0, 0],
+                    [0, 0, 1, 1000],
+                    [0, 0, 0, 1],
+                ])
+            case config.BoneType.FEMUR:
+                pose = np.array([
+                    [-1, 0, 0, 0],
+                    [0, 1, 0, 0],
+                    [0, 0, -1, -1000],
+                    [0, 0, 0, 1],
+                ])
+            case _:
+                raise ValueError(f'Unknown bone: {base}')
+        mask = gen_orthographic_photo(meshes, coord, res, extent[1], extent[1], pose, flags=RenderFlags.FLAT)
+        if base == config.BoneType.FEMUR:
+            mask = mask.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+        masks[base] = mask
+
+    return masks
 
 
 def calc_contact_deepest_points(
@@ -568,6 +603,7 @@ def do_calc_contact_deepest_points(
 
 def plot_contact_depth_maps(extents,
                             backgrounds,
+                            heatmap_masks,
                             frame_coordinates,
                             frame_bone_distance_map_origins,
                             frame_bone_distance_map_distances,
@@ -578,12 +614,14 @@ def plot_contact_depth_maps(extents,
     frames = {}
     for base, extent in extents.items():
         background = backgrounds[base]
+        heatmap_mask = heatmap_masks[base]
         deepest_points = frame_deepest_points[base]
         coords = frame_coordinates[base]
         frames[base] = do_plot_contact_depth_maps(
             base.value,
             extent,
             background,
+            heatmap_mask,
             coords,
             frame_bone_distance_map_origins,
             frame_bone_distance_map_distances,
@@ -595,16 +633,19 @@ def plot_contact_depth_maps(extents,
     return frames
 
 
-def do_plot_contact_depth_maps(name,
-                               extent,
-                               background,
-                               frame_coordinates,
-                               frame_bone_distance_map_origins,
-                               frame_bone_distance_map_distances,
-                               frame_contact_components,
-                               frame_contact_component_depth_map_origins,
-                               frame_contact_component_depth_map_depths,
-                               frame_deepest_points):
+def do_plot_contact_depth_maps(
+        name,
+        extent,
+        background,
+        heatmap_mask,
+        frame_coordinates,
+        frame_bone_distance_map_origins,
+        frame_bone_distance_map_distances,
+        frame_contact_components,
+        frame_contact_component_depth_map_origins,
+        frame_contact_component_depth_map_depths,
+        frame_deepest_points,
+):
     n = len(frame_bone_distance_map_distances)
     res = config.DEPTH_MAP_RESOLUTION
     grid_x, grid_y = np.mgrid[extent[0]:extent[1]:res[0] * 1j, extent[2]:extent[3]:res[1] * 1j]
@@ -694,6 +735,9 @@ def do_plot_contact_depth_maps(name,
             z = g_z[0]
         else:
             z = np.full(grid_x.shape, np.nan)
+
+        heatmap_mask_gray = np.array(heatmap_mask.convert("L"))
+        z = np.rot90(np.where(heatmap_mask_gray < 128, np.rot90(z), np.nan), k=-1)
 
         # depth map
         fig, ax = plt.subplots()
@@ -950,25 +994,61 @@ def calc_extent(extended_tibia_mesh, tibia_coord, padding=5):
 
 
 def gen_orthographic_photo(meshes: list[trimesh.Trimesh], coord: BoneCoordination, res: Tuple[int, int],
-                           xmag: float, ymag: float, camera_pose: np.array, light_intensity=3.0) -> Image.Image:
+                           xmag: float, ymag: float, camera_pose: np.array, light_intensity=3.0,
+                           flags=None) -> Image.Image:
     pyr_scene = pyr.Scene()
-    # scene = trimesh.Scene()
     for mesh in meshes:
         mesh = mesh.copy()
         mesh.vertices = coord.project(mesh.vertices)
-        # scene.add_geometry(mesh)
         pyr_mesh = pyr.Mesh.from_trimesh(mesh)
         pyr_scene.add(pyr_mesh)
     pyr_camera = pyr.OrthographicCamera(xmag, ymag, znear=0.1, zfar=1e5)
     pyr_scene.add(pyr_camera, pose=camera_pose)
-    # scene.add_geometry(my_axis(transform=camera_pose, axis_length=50, axis_radius=4))
-    # scene.show()
     pyr_light = pyr.DirectionalLight(color=np.ones(3), intensity=light_intensity)
     pyr_scene.add(pyr_light, pose=camera_pose)
-    renderer = pyr.OffscreenRenderer(
-        viewport_width=res[0], viewport_height=res[1])
-    color, _ = renderer.render(pyr_scene)
+    renderer = pyr.OffscreenRenderer(viewport_width=res[0], viewport_height=res[1])
+    render_flags = RenderFlags.NONE if flags is None else flags
+    color, _ = renderer.render(pyr_scene, render_flags)
     img = Image.fromarray(color)
+    return img
+
+
+def gen_orthographic_binary_photo(
+        black_meshes: list[trimesh.Trimesh],
+        white_meshes: list[trimesh.Trimesh],
+        coord: BoneCoordination,
+        res: Tuple[int, int],
+        xmag: float,
+        ymag: float,
+        camera_pose: np.array,
+) -> Image.Image:
+    scene = pyr.Scene(bg_color=[1.0, 1.0, 1.0, 1.0], ambient_light=[1.0, 1.0, 1.0])
+
+    def add_meshes(mesh_list, color):
+        for mesh in mesh_list:
+            mesh = mesh.copy()
+            mesh.vertices = coord.project(mesh.vertices)
+            material = pyr.MetallicRoughnessMaterial(
+                baseColorFactor=np.array([*color, 1.0]),
+                metallicFactor=0.0,
+                roughnessFactor=1.0
+            )
+            pyr_mesh = pyr.Mesh.from_trimesh(mesh, material=material)
+            scene.add(pyr_mesh)
+
+    add_meshes(black_meshes, color=[0.0, 0.0, 0.0])
+    add_meshes(white_meshes, color=[1.0, 1.0, 1.0])
+
+    camera = pyr.OrthographicCamera(xmag, ymag)
+    scene.add(camera, pose=camera_pose)
+
+    renderer = pyr.OffscreenRenderer(viewport_width=res[0], viewport_height=res[1])
+    color, _ = renderer.render(scene)
+    renderer.delete()
+
+    gray = np.mean(color[:, :, :3], axis=2)
+    binary = (gray < 0.5).astype(np.uint8) * 255
+    img = Image.fromarray(binary, mode='L')
     return img
 
 

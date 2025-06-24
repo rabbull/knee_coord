@@ -52,25 +52,23 @@ class BoneCoordination:
                             extra=None) -> Self:
         self = cls()
 
-        match side:
-            case config.KneeSide.LEFT:
-                left_point, right_point = lateral_point, medial_point
-            case config.KneeSide.RIGHT:
-                left_point, right_point = medial_point, lateral_point
-            case _:
-                raise NotImplementedError
+        if side == config.KneeSide.LEFT:
+            left_point, right_point = lateral_point, medial_point
+        elif side == config.KneeSide.RIGHT:
+            left_point, right_point = medial_point, lateral_point
+        else:
+            raise NotImplementedError
         del medial_point, lateral_point
 
         self._origin = (left_point + right_point) / 2
         self._t.set_translation(self._origin)
 
-        match bone_type:
-            case config.BoneType.FEMUR:
-                f = self.__set_rotation_femur
-            case config.BoneType.TIBIA:
-                f = self.__set_rotation_tibia
-            case _:
-                raise ValueError
+        if bone_type == config.BoneType.FEMUR:
+            f = self.__set_rotation_femur
+        elif bone_type == config.BoneType.TIBIA:
+            f = self.__set_rotation_tibia
+        else:
+            raise ValueError
         f(left_point, right_point, proximal_point, distal_point)
 
         self._extra = extra if extra else {}
@@ -79,7 +77,7 @@ class BoneCoordination:
     def __set_rotation_femur(self, left, right, proximal, distal):
         raw_x = right - left
         unit_x = normalize(raw_x)
-        raw_z = distal - proximal
+        raw_z = proximal - distal
         raw_y = np.cross(raw_z, unit_x)
         unit_y = normalize(raw_y)
         unit_z = normalize(np.cross(unit_x, unit_y))
@@ -88,7 +86,7 @@ class BoneCoordination:
         self._t.set_rotation(Rotation.from_matrix(mat_r))
 
     def __set_rotation_tibia(self, left, right, proximal, distal):
-        raw_z = distal - proximal
+        raw_z = proximal - distal
         unit_z = normalize(raw_z)
         raw_x = right - left
         raw_y = np.cross(unit_z, raw_x)
@@ -170,13 +168,12 @@ def main():
         task_depth_map_extent, task_depth_map_base_meshes, task_depth_map_base_coords, task_depth_map_base_cart_meshes,
     ])
 
-    match config.MOVEMENT_DATA_FORMAT:
-        case config.MomentDataFormat.CSV:
-            task_frame_bone_coordinates_raw = ctx.add_task('frame_bone_coordinates', load_frame_bone_coordinates_csv)
-        case config.MomentDataFormat.JSON:
-            task_frame_bone_coordinates_raw = ctx.add_task('frame_bone_coordinates', load_frame_bone_coordinates_raw)
-        case _:
-            raise NotImplementedError(f'Unknown MOVEMENT_DATA_FORMAT: {config.MOVEMENT_DATA_FORMAT}')
+    if config.MOVEMENT_DATA_FORMAT == config.MomentDataFormat.CSV:
+        task_frame_bone_coordinates_raw = ctx.add_task('frame_bone_coordinates', load_frame_bone_coordinates_csv)
+    elif config.MOVEMENT_DATA_FORMAT == config.MomentDataFormat.JSON:
+        task_frame_bone_coordinates_raw = ctx.add_task('frame_bone_coordinates', load_frame_bone_coordinates_raw)
+    else:
+        raise NotImplementedError(f'Unknown MOVEMENT_DATA_FORMAT: {config.MOVEMENT_DATA_FORMAT}')
 
     task_frame_bone_transformations_raw = \
         ctx.add_task('frame_bone_transformations_raw',
@@ -1393,7 +1390,7 @@ def do_plot_min_distance_curve(name, frame_bone_distance_origins, frame_bone_dis
     return mds, mdms, mdls
 
 
-def load_coord_from_file(path):
+def load_coord_from_file(path) -> tuple[BoneCoordination, BoneCoordination]:
     coord_points = {}
     with (open(path, 'r') as f):
         for line in f.readlines():
@@ -1413,14 +1410,14 @@ def load_coord_from_file(path):
     femur_coord = BoneCoordination.from_feature_points(config.KNEE_SIDE,
                                                        femur_medial_point,
                                                        femur_lateral_point,
-                                                       femur_distal_point,
                                                        femur_proximal_point,
+                                                       femur_distal_point,
                                                        config.BoneType.FEMUR)
     tibia_coord = BoneCoordination.from_feature_points(config.KNEE_SIDE,
                                                        tibia_medial_point,
                                                        tibia_lateral_point,
-                                                       tibia_distal_point,
                                                        tibia_proximal_point,
+                                                       tibia_distal_point,
                                                        config.BoneType.TIBIA)
     return femur_coord, tibia_coord
 
@@ -1920,7 +1917,8 @@ def dump_all_data(
             writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL, escapechar='\\', )
             writer.writerow(['Frame', 'Translation X', 'Translation Y', 'Translation Z',
                              'Rotation X', 'Rotation Y', 'Rotation Z', 'Area Medial', 'Area Lateral',
-                             'Deepest Point Medial X', 'Deepest Point Medial X', 'Deepest Point Medial Z',
+                             'Deepest Point Medial X', 'Deepest Point Medial Y', 'Deepest Point Medial Z',
+                             'Deepest Point Lateral X', 'Deepest Point Lateral Y', 'Deepest Point Lateral Z',
                              'Depth', 'Depth Medial', 'Depth Lateral'])
             for i in range(n):
                 writer.writerow([

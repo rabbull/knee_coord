@@ -110,9 +110,10 @@ IGNORE_CARTILAGE = False
 - `IGNORE_CARTILAGE`：是否忽略软骨数据
 
 ### 运动数据配置
+
 ```python
 MOVEMENT_DATA_FORMAT = MomentDataFormat.CSV
-MOVEMENT_DATA_FILE = 'model_0313/First_Profile.csv'
+MOVEMENT_DATA_FILE = 'archive/model_0313/First_Profile.csv'
 MOVEMENT_PICK_FRAMES = None
 MOVEMENT_SMOOTH = True
 MOVEMENT_INTERPOLATE_METHOD = InterpolateMethod.CubicSpline

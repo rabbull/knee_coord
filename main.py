@@ -10,7 +10,6 @@ import csv
 from datetime import datetime
 
 import numpy as np
-import scipy.interpolate
 import pyrender as pyr
 import tqdm
 import trimesh
@@ -24,11 +23,13 @@ from scipy.spatial import cKDTree
 from sklearn.cluster import KMeans
 import av
 import pandas as pd
-from trimesh.creation import icosphere, cylinder
 
 import config
 import task
 from utils import *
+
+# force off-screen renderer
+os.environ["PYOPENGL_PLATFORM"] = "egl"
 
 trimesh.util.attach_to_log(level=logging.INFO)
 
@@ -1115,14 +1116,18 @@ def calc_dof(original_coordinates_femur, original_coordinates_tibia,
         else:
             raise NotImplementedError(f'unknown base bone: {config.DOF_BASE_BONE}')
 
-        if config.DOF_ROTATION_METHOD == config.DofRotationMethod.JCS:
-            transform: dict[str, Any] = to_jcs(r.mat_homo, side='left')
-            tx, ty, tz = transform['q1'], transform['q2'], transform['q3']
+        tx, ty, tz = r.mat_t
+        if config.DOF_ROTATION_METHOD in {
+            config.DofRotationMethod.JCS,
+            config.DofRotationMethod.JCS_ROT
+        }:
+            transform: dict[str, Any] = to_jcs(r.mat_homo, side=config.KNEE_SIDE)
             ry = transform['adduction'] / np.pi * 180
             rx = transform['flexion'] / np.pi * 180
             rz = transform['tibial_rotation'] / np.pi * 180
+            if config.DOF_ROTATION_METHOD == config.DofRotationMethod.JCS:
+                tx, ty, tz = transform['q1'], transform['q2'], transform['q3']
         else:
-            tx, ty, tz = r.mat_t
             if config.DOF_ROTATION_METHOD.value.startswith('euler'):
                 rot = Rotation.from_matrix(r.mat_r)
                 rx, ry, rz = rot.as_euler(config.DOF_ROTATION_METHOD.value[-3:], degrees=True)
@@ -1209,6 +1214,8 @@ def plot_dof_curves(dof_data_raw, dof_data_smoothed):
         method = 'Projection'
     elif config.DOF_ROTATION_METHOD == config.DofRotationMethod.JCS:
         method = 'JCS'
+    elif config.DOF_ROTATION_METHOD == config.DofRotationMethod.JCS_ROT:
+        method = 'JCS Rotation'
     else:
         raise NotImplementedError(
             f'unkown rotation method: {config.DOF_ROTATION_METHOD}')
@@ -1830,7 +1837,7 @@ def plot_deformity_curve(thickness_curve, max_depth_curve, name: str):
 
 def do_plot_deformity_curve(base_name: str, thickness_curve, max_depth_curve, name: str):
     if thickness_curve is None or max_depth_curve is None:
-        print("normed max depth curve no data", file=sys.stderr)
+        print("normed max depth curve no archive", file=sys.stderr)
         return None
     thickness_medial, thickness_lateral = thickness_curve
     _, max_depth_medial, max_depth_lateral = max_depth_curve

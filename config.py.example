@@ -72,7 +72,7 @@ FEATURE_POINT_FILE = 'acc_task/Coordination_Pt.txt'
 IGNORE_CARTILAGE = False
 
 MOVEMENT_DATA_FORMAT = MomentDataFormat.CSV
-MOVEMENT_DATA_FILE = 'model_0526/Bill_walking_0.5_Automation.csv'
+MOVEMENT_DATA_FILE = 'archive/model_0526/Bill_walking_0.5_Automation.csv'
 MOVEMENT_SMOOTH = False
 MOVEMENT_PICK_FRAMES: Optional[list[int]] = None
 MOVEMENT_INTERPOLATE_METHOD: InterpolateMethod = InterpolateMethod.CubicSpline

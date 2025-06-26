@@ -1,3 +1,4 @@
+import os
 from typing import Optional, Sequence, Mapping, Any
 
 import numpy as np
@@ -10,6 +11,8 @@ from trimesh import Trimesh
 from scipy.spatial.transform import Rotation
 import trimesh.scene
 import trimesh.scene.transforms
+
+import config
 
 Real: type = np.float64
 
@@ -35,7 +38,7 @@ def normalize(x):
 
 
 class Transformation3D(object):
-    def __init__(self, h = None):
+    def __init__(self, h=None):
         if h is None:
             h = np.eye(4)
         self._h = h
@@ -189,11 +192,11 @@ def explode_axis(axis):
 
 
 def my_axis(
-    origin_size: Number = 0.04,
-    transform: Optional[ArrayLike] = None,
-    origin_color: Optional[ArrayLike] = None,
-    axis_radius: Optional[Number] = None,
-    axis_length: Optional[Number] = None,
+        origin_size: Number = 0.04,
+        transform: Optional[ArrayLike] = None,
+        origin_color: Optional[ArrayLike] = None,
+        axis_radius: Optional[Number] = None,
+        axis_length: Optional[Number] = None,
 ) -> list[trimesh.Trimesh]:
     """
     Return an XYZ axis marker as a  Trimesh, which represents position
@@ -272,6 +275,7 @@ def my_axis(
     # append the sphere and three cylinders
     return [axis_origin, x_axis, y_axis, z_axis]
 
+
 def take_kth(k: Any):
     def res(s: Mapping[Any, Any]):
         return s[k]
@@ -285,5 +289,18 @@ def list_take_kth(k: int):
 
     return res
 
-def safe_div(a, b, default = 0.0):
+
+def safe_div(a, b, default=0.0):
     return a / b if b != 0 else default
+
+
+def get_frame_output_directory(index):
+    return os.path.join(config.OUTPUT_DIRECTORY, f'frame_{index}')
+
+
+def mesh_union(mesh1: trimesh.Trimesh, mesh2: Optional[trimesh.Trimesh]):
+    if mesh2:
+        return remove_bubbles(mesh1.union(mesh2))
+    return remove_bubbles(mesh1)
+
+

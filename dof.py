@@ -10,7 +10,7 @@ from scipy.spatial.transform import Rotation
 import config
 
 
-def to_jcs(homo, side: config.KneeSide = config.KneeSide.LEFT):
+def to_jcs(homo, side: config.KneeSide = config.KneeSide.LEFT) -> dict[str, float]:
     r = homo[:3, :3]
     p = homo[:3, 3]
     e3_t = np.array([0., 0., 1.])
@@ -81,7 +81,7 @@ def calc_dof(original_coordinates_femur, original_coordinates_tibia,
             config.DofRotationMethod.JCS,
             config.DofRotationMethod.JCS_ROT
         }:
-            transform: dict[str, Any] = to_jcs(r.mat_homo, side=config.KNEE_SIDE)
+            transform = to_jcs(r.mat_homo, side=config.KNEE_SIDE)
             ry = transform['adduction'] / np.pi * 180
             rx = transform['flexion'] / np.pi * 180
             rz = transform['tibial_rotation'] / np.pi * 180
@@ -178,7 +178,7 @@ def plot_dof_curves(dof_data_raw, dof_data_smoothed):
         method = 'JCS Rotation'
     else:
         raise NotImplementedError(
-            f'unkown rotation method: {config.DOF_ROTATION_METHOD}')
+            f'unknown rotation method: {config.DOF_ROTATION_METHOD}')
 
     fig, ax = plt.subplots()
     ax.plot(x, y_rx, raw_line)
@@ -335,4 +335,3 @@ def extract_rotation_projection(H_F, H_T):
     angle_z = project_and_signed_angle(vT_x, eT_x, axis_idx=2)
 
     return angle_x, angle_y, angle_z
-

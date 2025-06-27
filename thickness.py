@@ -38,7 +38,7 @@ def do_plot_cartilage_thickness_curve(
 
         thickness = [0, 0]
         for point_index, point in enumerate(frame_deepest_points[frame_index]):
-            origin = np.array([point], dtype=Real) - ray_direction * 1e6
+            origin = np.array([point], dtype=Real) - ray_direction * 1e3
             hits, ray_indices, _ = \
                 cart_mesh.ray.intersects_location(origin, ray_direction, multiple_hits=True)
             if len(ray_indices) >= 2:
@@ -119,6 +119,6 @@ def do_plot_deformity_curve(base_name: str, thickness_curve, max_depth_curve, na
     ax.plot(lateral, label='Lateral')
     ax.legend()
     ax.set_title(f'Deformity Curve - Normed by {name.capitalize()} - Base {base_name}')
-    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'{name}_normed_max_depth_{base_name}.jpg'))
+    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'{name}_deformity_{base_name}.jpg'))
     plt.close(fig)
     return medial, lateral

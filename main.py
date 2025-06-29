@@ -361,9 +361,9 @@ def dump_all_data(
         area_medial, area_lateral = task_area_curve[base]
         deepest_points = task_frame_deepest_points[base]
         max_depth, max_depth_medial, max_depth_lateral = task_max_depth_curve[base]
-        femur_deformity_medial, femur_deformity_lateral = task_femur_deformity_curve[base]
-        tibia_deformity_medial, tibia_deformity_lateral = task_tibia_deformity_curve[base]
-        deformity_medial, deformity_lateral = task_deformity_curve[base]
+        femur_deformity_medial, femur_deformity_lateral = task_femur_deformity_curve[base] if task_femur_deformity_curve is not None else (None, None)
+        tibia_deformity_medial, tibia_deformity_lateral = task_tibia_deformity_curve[base] if task_tibia_deformity_curve is not None else (None, None)
+        deformity_medial, deformity_lateral = task_deformity_curve[base] if task_deformity_curve is not None else (None, None)
         csv_path = os.path.join(config.OUTPUT_DIRECTORY, f'{base.value}_all_data.csv')
         with open(csv_path, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL, escapechar='\\', )
@@ -397,12 +397,12 @@ def dump_all_data(
                     max_depth[i] if max_depth[i] is not None else 0,
                     max_depth_medial[i] if max_depth_medial[i] is not None else 0,
                     max_depth_lateral[i] if max_depth_lateral[i] is not None else 0,
-                    femur_deformity_medial[i] if femur_deformity_medial[i] is not None else 0,
-                    femur_deformity_lateral[i] if femur_deformity_lateral[i] is not None else 0,
-                    tibia_deformity_medial[i] if tibia_deformity_medial[i] is not None else 0,
-                    tibia_deformity_lateral[i] if tibia_deformity_lateral[i] is not None else 0,
-                    deformity_medial[i] if deformity_medial[i] is not None else 0,
-                    deformity_lateral[i] if deformity_lateral[i] is not None else 0,
+                    femur_deformity_medial[i] if femur_deformity_medial is not None and femur_deformity_medial[i] is not None else 0,
+                    femur_deformity_lateral[i] if femur_deformity_lateral is not None and femur_deformity_lateral[i] is not None else 0,
+                    tibia_deformity_medial[i] if tibia_deformity_medial is not None and tibia_deformity_medial[i] is not None else 0,
+                    tibia_deformity_lateral[i] if tibia_deformity_lateral is not None and tibia_deformity_lateral[i] is not None else 0,
+                    deformity_medial[i] if deformity_medial is not None and deformity_medial[i] is not None else 0,
+                    deformity_lateral[i] if deformity_lateral is not None and deformity_lateral[i] is not None else 0,
                 ])
 
 

@@ -45,6 +45,7 @@ def calc_contact_deepest_points(
         deepest_points[base] = \
             do_calc_contact_deepest_points(coords, frame_contact_component_depth_map_origins,
                                            frame_contact_component_depth_map_depths)
+    print(deepest_points)
     return deepest_points
 
 
@@ -541,6 +542,8 @@ def plot_deepest_points(
         extent = extends[base]
         frame_deepest_points = deepest_points[base]
         frame_coordinates = coordinates[base]
+        if all(p is None for p in frame_deepest_points):
+            continue
         res[base] = do_plot_deepest_points(base, background, extent, frame_deepest_points, frame_coordinates)
     return res
 
@@ -551,7 +554,7 @@ def do_plot_deepest_points(
         extent: tuple[float, float, float, float],
         frame_deepest_points: list[tuple[None | np.ndarray, None | np.ndarray]],
         frame_coordinates: list[BoneCoordination],
-) -> tuple[np.ndarray, np.ndarray]:
+) -> dict[str, np.ndarray]:
     left_points = []
     right_points = []
     for coord, (left, right) in zip(frame_coordinates, frame_deepest_points):
@@ -562,21 +565,40 @@ def do_plot_deepest_points(
             right = coord.project(right)[:2]
             right_points.append(right)
 
-    left_points = np.array(left_points)
-    right_points = np.array(right_points)
+    if config.KNEE_SIDE == config.KneeSide.LEFT:
+        points = {
+            'Medial': right_points,
+            'Lateral': left_points,
+        }
+    elif config.KNEE_SIDE == config.KneeSide.RIGHT:
+        points = {
+            'Medial': left_points,
+            'Lateral': right_points,
+        }
+    else:
+        raise ValueError('unreachable')
 
     fig, ax = plt.subplots()
     ax.imshow(background, extent=extent, interpolation='none', aspect='equal')
-    ax.plot(left_points[:, 0], left_points[:, 1], marker='+')
-    ax.plot(right_points[:, 0], right_points[:, 1], marker='+')
+
+    np_pts = {}
+    for name, pts in points.items():
+        if len(pts) == 0:
+            continue
+        pts = np.array(pts)
+        ax.plot(pts[:, 0], pts[:, 1], marker='+', label=name)
+        np_pts[name] = pts
+    ax.legend()
     set_depth_map_axes(ax)
-    fig.savefig(os.path.join(
+
+    img_path = os.path.join(
         config.OUTPUT_DIRECTORY,
         f'deepest_points_{base.value}.png'
-    ))
+    )
+    fig.savefig(img_path)
     plt.close(fig)
 
-    return left_points, right_points
+    return np_pts
 
 
 def plot_fixed_points(

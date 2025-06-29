@@ -44,6 +44,13 @@ class BoneType(Enum):
     FEMUR = 'femur'
     TIBIA = 'tibia'
 
+    def invert(self):
+        if self == BoneType.FEMUR:
+            return BoneType.TIBIA
+        elif self == BoneType.TIBIA:
+            return BoneType.FEMUR
+        raise ValueError("unreachable")
+
 
 class KneeSide(Enum):
     LEFT = 'left'

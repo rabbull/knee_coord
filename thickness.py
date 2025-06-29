@@ -27,7 +27,7 @@ def do_plot_cartilage_thickness_curve(
         first2: bool = False):
     if frame_cart_meshes is None or len(frame_cart_meshes) == 0 or config.IGNORE_CARTILAGE:
         print("Cartilages ignored.")
-        return None
+        return None, None
 
     n = len(frame_cart_meshes)
     left_x, right_x = np.zeros((n,), dtype=Real), np.zeros((n,), dtype=Real)
@@ -38,7 +38,10 @@ def do_plot_cartilage_thickness_curve(
 
         thickness = [0, 0]
         for point_index, point in enumerate(frame_deepest_points[frame_index]):
-            origin = np.array([point], dtype=Real) - ray_direction * 1e3
+            if point is None:
+                continue
+            origin = np.array([point], dtype=Real) - ray_direction * 1e-3
+            print(point, origin)
             hits, ray_indices, _ = \
                 cart_mesh.ray.intersects_location(origin, ray_direction, multiple_hits=True)
             if len(ray_indices) >= 2:
@@ -60,7 +63,11 @@ def do_plot_cartilage_thickness_curve(
     ax.plot(lateral, label='Lateral')
     ax.legend()
     ax.set_title(f'Cartilage Thickness Curve - {bone_name.capitalize()} - Base {base_name}')
-    fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'{bone_name}_cartilage_thickness_base_{base_name}.jpg'))
+    img_path = os.path.join(config.OUTPUT_DIRECTORY, f'{bone_name}_cartilage_thickness_base_{base_name}.jpg')
+    directory = os.path.dirname(img_path)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    fig.savefig(img_path)
     plt.close(fig)
 
     pd.DataFrame({
@@ -74,6 +81,9 @@ def do_plot_cartilage_thickness_curve(
 
 
 def plot_cartilage_thickness_curve_sum(tibia_cart_thickness, femur_cart_thickness):
+    if tibia_cart_thickness is None and femur_cart_thickness is None:
+        print("Cartilages ignored.")
+        return None
     res = {}
     for base in tibia_cart_thickness:
         tibia_medial, tibia_lateral = tibia_cart_thickness[base]
@@ -93,6 +103,7 @@ def plot_cartilage_thickness_curve_sum(tibia_cart_thickness, femur_cart_thicknes
 
 def plot_deformity_curve(thickness_curve, max_depth_curve, name: str):
     if thickness_curve is None or max_depth_curve is None:
+        print("Cartilages ignored.")
         return None
     res = {}
     for base in thickness_curve:

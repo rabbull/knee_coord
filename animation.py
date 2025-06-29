@@ -17,6 +17,19 @@ def transform_frame_mesh(mesh: None | trimesh.Trimesh, transformations: list[Tra
     return [None for _ in transformations]
 
 
+def transform_frame_fixed_points(
+        fixed_points: dict[config.BoneType, dict[str, list[float]]],
+        transformations: dict[config.BoneType, list[Transformation3D]],
+) -> dict[config.BoneType, dict[str, list[list[float]]]]:
+    transformed = {}
+    for bone_type, bone_fixed_points in fixed_points.items():
+        transformed[bone_type] = defaultdict(list)
+        for name, point in bone_fixed_points.items():
+            for transformation in transformations[bone_type]:
+                transformed[bone_type][name].append(transformation.transform(point))
+    return transformed
+
+
 def gen_bone_animation_frames(frame_femur_meshes, frame_tibia_meshes,
                               frame_femur_coords, frame_tibia_coords,
                               frame_femur_cart_meshes=None, frame_tibia_cart_meshes=None):

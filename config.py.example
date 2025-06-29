@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Optional
 
 from scipy.interpolate import CubicSpline, Akima1DInterpolator, PchipInterpolator
 
@@ -32,6 +31,7 @@ class DofRotationMethod(Enum):
     EULER_YXZ = 'euler_yxz'
     PROJECTION = 'projection'  # 以绕 X 轴旋转为例，先选取股骨的 Y 轴基向量，再投影到胫骨坐标系 YZ 平面上，再计算相对胫骨的 Y 基向量旋转了多少
     JCS = 'jcs'
+    JCS_ROT = 'jcs_rot'  # 用 JCS 系统表示旋转，用普通平移考虑 XYZ
 
 
 class InterpolateMethod(Enum):
@@ -44,6 +44,13 @@ class BoneType(Enum):
     FEMUR = 'femur'
     TIBIA = 'tibia'
 
+    def invert(self):
+        if self == BoneType.FEMUR:
+            return BoneType.TIBIA
+        elif self == BoneType.TIBIA:
+            return BoneType.FEMUR
+        raise ValueError("unreachable")
+
 
 class KneeSide(Enum):
     LEFT = 'left'
@@ -53,28 +60,39 @@ class KneeSide(Enum):
 OUTPUT_DIRECTORY = 'output'
 
 # tasks
-GENERATE_ANIMATION = False
-GENERATE_DEPTH_CURVE = False
-GENERATE_DISTANCE_CURVE = False
+GENERATE_ANIMATION = True
+GENERATE_DEPTH_CURVE = True
+GENERATE_DISTANCE_CURVE = True
 GENERATE_DEPTH_MAP = True
-GENERATE_DOF_CURVES = False
-GENERATE_CART_THICKNESS_CURVE = False
-GENERATE_NORM_DEPTH_CURVE = False
-GENERATE_AREA_CURVE = False
-DUMP_ALL_DATA = False
+GENERATE_DOF_CURVES = True
+GENERATE_CART_THICKNESS_CURVE = True
+GENERATE_NORM_DEPTH_CURVE = True
+GENERATE_AREA_CURVE = True
+DUMP_ALL_DATA = True
+GENERATE_FIXED_POINT_PLOT = True
 
 KNEE_SIDE = KneeSide.LEFT
-FEMUR_MODEL_FILE = 'acc_task/Femur.stl'
-FEMUR_CARTILAGE_MODEL_FILE = 'acc_task/Femur_Cart_Smooth.stl'
-TIBIA_MODEL_FILE = 'acc_task/Tibia.stl'
-TIBIA_CARTILAGE_MODEL_FILE = 'acc_task/Tibia_Cart_Smooth.stl'
-FEATURE_POINT_FILE = 'acc_task/Coordination_Pt.txt'
+FEMUR_MODEL_FILE = 'archive/acc_task/Femur.stl'
+FEMUR_CARTILAGE_MODEL_FILE = 'archive/acc_task/Femur_Cart_Smooth.stl'
+TIBIA_MODEL_FILE = 'archive/acc_task/Tibia.stl'
+TIBIA_CARTILAGE_MODEL_FILE = 'archive/acc_task/Tibia_Cart_Smooth.stl'
+FEATURE_POINT_FILE = 'archive/acc_task/Coordination_Pt.txt'
 IGNORE_CARTILAGE = False
+FIXED_POINTS = {
+    BoneType.TIBIA: {
+        "Tibia Medial": [37.335, -28.324, -80.896],
+        "Tibia Lateral": [87.035, -15.498, -80.256],
+    },
+    BoneType.FEMUR: {
+        "Femur Medial": [12.495, -35.767, -50.206],
+        "Femur Lateral": [99.360, -16.093, -49.264],
+    }
+}
 
 MOVEMENT_DATA_FORMAT = MomentDataFormat.CSV
 MOVEMENT_DATA_FILE = 'archive/model_0526/Bill_walking_0.5_Automation.csv'
 MOVEMENT_SMOOTH = False
-MOVEMENT_PICK_FRAMES: Optional[list[int]] = None
+MOVEMENT_PICK_FRAMES: None | list[int] = None
 MOVEMENT_INTERPOLATE_METHOD: InterpolateMethod = InterpolateMethod.CubicSpline
 
 # color picker: https://g.co/kgs/Te8C3VZ

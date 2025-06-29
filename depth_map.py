@@ -1,4 +1,5 @@
 import os
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -7,6 +8,7 @@ import trimesh
 from PIL import Image
 from matplotlib import pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+from numpy.linalg import svd
 from pyrender import RenderFlags
 from scipy.interpolate import griddata
 from scipy.spatial import cKDTree
@@ -37,12 +39,13 @@ def calc_contact_deepest_points(
         frame_coordinates,
         frame_contact_component_depth_map_origins,
         frame_contact_component_depth_map_depths,
-):
+) -> dict[config.BoneType, list[tuple[None | np.ndarray, None | np.ndarray]]]:
     deepest_points = {}
     for base, coords in frame_coordinates.items():
         deepest_points[base] = \
             do_calc_contact_deepest_points(coords, frame_contact_component_depth_map_origins,
                                            frame_contact_component_depth_map_depths)
+    print(deepest_points)
     return deepest_points
 
 
@@ -50,7 +53,7 @@ def do_calc_contact_deepest_points(
         frame_coordinates,
         frame_contact_component_depth_map_origins,
         frame_contact_component_depth_map_depths,
-):
+) -> list[tuple[None | np.ndarray, None | np.ndarray]]:
     n = len(frame_contact_component_depth_map_origins)
     frame_deepest_points = []
     for frame_index in range(n):
@@ -240,17 +243,7 @@ def do_plot_contact_depth_maps(
             deepest_points_2d = coord.project(deepest_points)[:, :2]
             ax.scatter(deepest_points_2d[:, 0], deepest_points_2d[:, 1], marker='+', s=100, color='turquoise')
 
-        for label in ax.get_yticklabels():
-            if label.get_text() == '0':
-                label.set_text('')
-        for label in ax.get_xticklabels():
-            if label.get_text() == '0':
-                x, y = label.get_position()
-                label.set_position((x + 1, y))
-        ax.spines['left'].set_position('center')
-        ax.spines['bottom'].set_position('center')
-        ax.spines['right'].set_color('none')
-        ax.spines['top'].set_color('none')
+        set_depth_map_axes(ax)
 
         image_path = os.path.join(get_frame_output_directory(frame_index), f'depth_map_{name}_frame_{frame_index}.jpg')
         directory = os.path.dirname(image_path)
@@ -407,6 +400,7 @@ def prepare_rays_from_model(model, direction, inward: bool = False, eps: float =
     directions = np.tile(ud, (len(origins), 1))
     return origins, directions
 
+
 def plot_max_depth_curve(frame_contact_components, contact_component_depth_maps, frame_coordinates):
     res = {}
     for base, coords in frame_coordinates.items():
@@ -534,3 +528,132 @@ def calc_frame_contact_plane_normal_vectors(frame_contact_areas: list[trimesh.Tr
             normal = -normal
         normal_vectors.append(normal)
     return normal_vectors
+
+
+def plot_deepest_points(
+        backgrounds: dict[config.BoneType, Image.Image],
+        extends: dict[config.BoneType, tuple[float, float, float, float]],
+        deepest_points: dict[config.BoneType, list[tuple[None | np.ndarray, None | np.ndarray]]],
+        coordinates: dict[config.BoneType, list[BoneCoordination]]
+) -> dict[config.BoneType, tuple[np.ndarray, np.ndarray]]:
+    res = {}
+    for base in backgrounds.keys():
+        background = backgrounds[base]
+        extent = extends[base]
+        frame_deepest_points = deepest_points[base]
+        frame_coordinates = coordinates[base]
+        if all(p is None for p in frame_deepest_points):
+            continue
+        res[base] = do_plot_deepest_points(base, background, extent, frame_deepest_points, frame_coordinates)
+    return res
+
+
+def do_plot_deepest_points(
+        base: config.BoneType,
+        background: Image.Image,
+        extent: tuple[float, float, float, float],
+        frame_deepest_points: list[tuple[None | np.ndarray, None | np.ndarray]],
+        frame_coordinates: list[BoneCoordination],
+) -> dict[str, np.ndarray]:
+    left_points = []
+    right_points = []
+    for coord, (left, right) in zip(frame_coordinates, frame_deepest_points):
+        if left is not None:
+            left = coord.project(left)[:2]
+            left_points.append(left)
+        if right is not None:
+            right = coord.project(right)[:2]
+            right_points.append(right)
+
+    if config.KNEE_SIDE == config.KneeSide.LEFT:
+        points = {
+            'Medial': right_points,
+            'Lateral': left_points,
+        }
+    elif config.KNEE_SIDE == config.KneeSide.RIGHT:
+        points = {
+            'Medial': left_points,
+            'Lateral': right_points,
+        }
+    else:
+        raise ValueError('unreachable')
+
+    fig, ax = plt.subplots()
+    ax.imshow(background, extent=extent, interpolation='none', aspect='equal')
+
+    np_pts = {}
+    for name, pts in points.items():
+        if len(pts) == 0:
+            continue
+        pts = np.array(pts)
+        ax.plot(pts[:, 0], pts[:, 1], marker='+', label=name)
+        np_pts[name] = pts
+    ax.legend()
+    set_depth_map_axes(ax)
+
+    img_path = os.path.join(
+        config.OUTPUT_DIRECTORY,
+        f'deepest_points_{base.value}.png'
+    )
+    fig.savefig(img_path)
+    plt.close(fig)
+
+    return np_pts
+
+
+def plot_fixed_points(
+        backgrounds: dict[config.BoneType, Image.Image],
+        extends: dict[config.BoneType, tuple[float, float, float, float]],
+        fixed_points: dict[config.BoneType, dict[str, list[list[float]]]],
+        coordinates: dict[config.BoneType, list[BoneCoordination]],
+) -> dict[config.BoneType, dict[str, np.ndarray]]:
+    res = {}
+    for base in backgrounds.keys():
+        background = backgrounds[base]
+        extent = extends[base]
+        frame_fixed_points = fixed_points[base.invert()]
+        frame_coordinates = coordinates[base]
+        res[base] = do_plot_fixed_points(base, background, extent, frame_fixed_points, frame_coordinates)
+    return res
+
+
+def do_plot_fixed_points(
+        base: config.BoneType,
+        background: Image.Image,
+        extent: tuple[float, float, float, float],
+        frame_fixed_points: dict[str, list[list[float]]],
+        frame_coordinates: list[BoneCoordination],
+) -> dict[str, np.ndarray]:
+    points_2d = {}
+    for name, points in frame_fixed_points.items():
+        points_2d[name] = []
+        for coord, point in zip(frame_coordinates, points):
+            points_2d[name].append(coord.project(point)[:2])
+        points_2d[name] = np.array(points_2d[name])
+
+    fig, ax = plt.subplots()
+    ax.imshow(background, extent=extent, interpolation='none', aspect='equal')
+    for name, points in points_2d.items():
+        ax.plot(points[:, 0], points[:, 1], marker='+', label=name)
+    set_depth_map_axes(ax)
+    fig.savefig(os.path.join(
+        config.OUTPUT_DIRECTORY,
+        f'fixed_points_{base}.png'
+    ))
+    plt.close(fig)
+
+    return points_2d
+
+
+def set_depth_map_axes(ax):
+    for label in ax.get_yticklabels():
+        if label.get_text() == '0':
+            label.set_text('')
+    for label in ax.get_xticklabels():
+        if label.get_text() == '0':
+            x, y = label.get_position()
+            label.set_position((x + 1, y))
+    ax.spines['left'].set_position('center')
+    ax.spines['bottom'].set_position('center')
+    ax.spines['right'].set_color('none')
+    ax.spines['top'].set_color('none')

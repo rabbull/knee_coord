@@ -92,13 +92,14 @@ GENERATE_DOF_CURVES = True
 - `GENERATE_DOF_CURVES`：是否生成自由度曲线。
 
 ### 膝关节模型配置
+
 ```python
 KNEE_SIDE = KneeSide.LEFT
-FEMUR_MODEL_FILE = 'acc_task/Femur.stl'
-FEMUR_CARTILAGE_MODEL_FILE = 'acc_task/Femur_Cart_Smooth.stl'
-TIBIA_MODEL_FILE = 'acc_task/Tibia.stl'
-TIBIA_CARTILAGE_MODEL_FILE = 'acc_task/Tibia_Cart_Smooth.stl'
-FEATURE_POINT_FILE = 'acc_task/Coordination_Pt.txt'
+FEMUR_MODEL_FILE = 'archive/acc_task/Femur.stl'
+FEMUR_CARTILAGE_MODEL_FILE = 'archive/acc_task/Femur_Cart_Smooth.stl'
+TIBIA_MODEL_FILE = 'archive/acc_task/Tibia.stl'
+TIBIA_CARTILAGE_MODEL_FILE = 'archive/acc_task/Tibia_Cart_Smooth.stl'
+FEATURE_POINT_FILE = 'archive/acc_task/Coordination_Pt.txt'
 IGNORE_CARTILAGE = False
 ```
 - `KNEE_SIDE`：设置分析的是左膝还是右膝

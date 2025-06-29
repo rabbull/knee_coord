@@ -91,3 +91,7 @@ def load_coord_from_file(path) -> tuple[BoneCoordination, BoneCoordination]:
                                                        tibia_distal_point,
                                                        config.BoneType.TIBIA)
     return femur_coord, tibia_coord
+
+
+def load_fixed_points():
+    return config.FIXED_POINTS

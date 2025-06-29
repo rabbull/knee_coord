@@ -1,4 +1,5 @@
 import functools
+import itertools
 import logging
 import csv
 import os
@@ -9,15 +10,18 @@ import trimesh
 
 import config
 import task
-from animation import transform_frame_mesh, gen_bone_animation_frames, gen_movement_animation
+from animation import transform_frame_mesh, gen_bone_animation_frames, gen_movement_animation, \
+    transform_frame_fixed_points
 from area import plot_contact_area_curve
-from bone import BoneCoordination, calc_frame_coordinates
+from bone import calc_frame_coordinates
 from contact import get_contact_area, get_contact_components
 from depth_map import gen_contact_depth_map_extent, gen_contact_depth_map_background, gen_contact_depth_map_mask, \
     calc_frame_contact_plane_normal_vectors, calc_bone_distance_map, calc_contact_depth_map, plot_max_depth_curve, \
-    plot_min_distance_curve, calc_contact_deepest_points, plot_contact_depth_maps, gen_depth_map_animation
+    plot_min_distance_curve, calc_contact_deepest_points, plot_contact_depth_maps, gen_depth_map_animation, \
+    do_plot_deepest_points, plot_deepest_points, plot_fixed_points
 from dof import calc_dof, dump_dof, plot_dof_curves
-from myio import load_mesh, load_coord_from_file, load_frame_bone_coordinates_csv, load_frame_bone_coordinates_raw
+from myio import load_mesh, load_coord_from_file, load_frame_bone_coordinates_csv, load_frame_bone_coordinates_raw, \
+    load_fixed_points
 from render import calc_extents
 from smooth import smooth_transformations
 from thickness import plot_cartilage_thickness_curve, plot_cartilage_thickness_curve_sum, plot_deformity_curve
@@ -54,6 +58,8 @@ def main():
         ctx.add_task('watertight_test_extended_meshes',
                      lambda meshes: not any(not m.is_watertight for m in meshes),
                      deps=[task_all_extended_meshes])
+
+    task_fixed_points = ctx.add_task('fixed_points', load_fixed_points, deps=[])
 
     task_original_coordinates = \
         ctx.add_task('original_coordinates', functools.partial(load_coord_from_file, config.FEATURE_POINT_FILE))
@@ -140,6 +146,8 @@ def main():
     task_frame_extended_tibia_meshes = \
         ctx.add_task('frame_extended_tibia_meshes', transform_frame_mesh,
                      deps=[task_extended_tibia_mesh, task_frame_bone_transformations_tibia])
+    task_frame_fixed_points = ctx.add_task('frame_fixed_points', transform_frame_fixed_points,
+                                           deps=[task_fixed_points, task_frame_bone_transformations])
 
     task_bone_animation_frames = ctx.add_task('bone_animation_frames', gen_bone_animation_frames, deps=[
         task_frame_femur_meshes, task_frame_tibia_meshes,
@@ -249,6 +257,14 @@ def main():
                                                      task_frame_contact_component_depth_map_depths,
                                                      task_frame_deepest_points,
                                                  ])
+
+    task_plot_deepest_points = ctx.add_task('plot_deepest_points', plot_deepest_points, deps=[
+        task_depth_map_background, task_depth_map_extent, task_frame_deepest_points, task_frame_coordinates,
+    ])
+    task_plot_fixed_points = ctx.add_task('plot_fixed_points', plot_fixed_points, deps=[
+        task_depth_map_background, task_depth_map_extent, task_frame_fixed_points, task_frame_coordinates,
+    ])
+
     task_contact_depth_map_animation = \
         ctx.add_task('frame_contact_depth_map_animation',
                      gen_depth_map_animation,
@@ -302,6 +318,7 @@ def main():
 
     task_dump_all_data = ctx.add_task('dump_all_data', dump_all_data, deps=[
         task_dof_data_raw, task_dof_data_smoothed, task_area_curve, task_frame_deepest_points, task_max_depth_curve,
+        task_femur_deformity_curve, task_tibia_deformity_curve, task_deformity_curve,
     ])
 
     if config.GENERATE_CART_THICKNESS_CURVE:
@@ -312,6 +329,7 @@ def main():
     if config.GENERATE_DEPTH_CURVE:
         task_max_depth_curve()
     if config.GENERATE_DEPTH_MAP:
+        task_plot_deepest_points()
         task_contact_depth_map_animation()
     if config.GENERATE_DOF_CURVES:
         task_plot_dof_curves()
@@ -319,17 +337,20 @@ def main():
     if config.GENERATE_NORM_DEPTH_CURVE:
         task_tibia_deformity_curve()
         task_femur_deformity_curve()
+        task_deformity_curve()
     if config.GENERATE_AREA_CURVE:
         task_area_curve()
     if config.DUMP_ALL_DATA:
         task_dump_all_data()
     if config.GENERATE_DISTANCE_CURVE:
         task_min_distance_curve()
+    if config.GENERATE_FIXED_POINT_PLOT:
+        task_plot_fixed_points()
 
 
 def dump_all_data(
         task_dof_data_raw, task_dof_data_smoothed, task_area_curve, task_frame_deepest_points, task_max_depth_curve,
-):
+        task_femur_deformity_curve, task_tibia_deformity_curve, task_deformity_curve):
     dof = task_dof_data_raw
     if config.MOVEMENT_SMOOTH:
         dof = task_dof_data_smoothed
@@ -340,14 +361,22 @@ def dump_all_data(
         area_medial, area_lateral = task_area_curve[base]
         deepest_points = task_frame_deepest_points[base]
         max_depth, max_depth_medial, max_depth_lateral = task_max_depth_curve[base]
+        femur_deformity_medial, femur_deformity_lateral = task_femur_deformity_curve[base] if task_femur_deformity_curve is not None else (None, None)
+        tibia_deformity_medial, tibia_deformity_lateral = task_tibia_deformity_curve[base] if task_tibia_deformity_curve is not None else (None, None)
+        deformity_medial, deformity_lateral = task_deformity_curve[base] if task_deformity_curve is not None else (None, None)
         csv_path = os.path.join(config.OUTPUT_DIRECTORY, f'{base.value}_all_data.csv')
         with open(csv_path, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL, escapechar='\\', )
-            writer.writerow(['Frame', 'Translation X', 'Translation Y', 'Translation Z',
-                             'Rotation X', 'Rotation Y', 'Rotation Z', 'Area Medial', 'Area Lateral',
-                             'Deepest Point Medial X', 'Deepest Point Medial Y', 'Deepest Point Medial Z',
-                             'Deepest Point Lateral X', 'Deepest Point Lateral Y', 'Deepest Point Lateral Z',
-                             'Depth', 'Depth Medial', 'Depth Lateral'])
+            writer.writerow([
+                'Frame', 'Translation X', 'Translation Y', 'Translation Z',
+                'Rotation X', 'Rotation Y', 'Rotation Z', 'Area Medial', 'Area Lateral',
+                'Deepest Point Medial X', 'Deepest Point Medial Y', 'Deepest Point Medial Z',
+                'Deepest Point Lateral X', 'Deepest Point Lateral Y', 'Deepest Point Lateral Z',
+                'Depth', 'Depth Medial', 'Depth Lateral',
+                'Femur Deformity Medial', 'Femur Deformity Lateral',
+                'Tibia Deformity Medial', 'Tibia Deformity Lateral',
+                'Deformity Medial', 'Deformity Lateral',
+            ])
             for i in range(n):
                 writer.writerow([
                     x[i],
@@ -368,6 +397,12 @@ def dump_all_data(
                     max_depth[i] if max_depth[i] is not None else 0,
                     max_depth_medial[i] if max_depth_medial[i] is not None else 0,
                     max_depth_lateral[i] if max_depth_lateral[i] is not None else 0,
+                    femur_deformity_medial[i] if femur_deformity_medial is not None and femur_deformity_medial[i] is not None else 0,
+                    femur_deformity_lateral[i] if femur_deformity_lateral is not None and femur_deformity_lateral[i] is not None else 0,
+                    tibia_deformity_medial[i] if tibia_deformity_medial is not None and tibia_deformity_medial[i] is not None else 0,
+                    tibia_deformity_lateral[i] if tibia_deformity_lateral is not None and tibia_deformity_lateral[i] is not None else 0,
+                    deformity_medial[i] if deformity_medial is not None and deformity_medial[i] is not None else 0,
+                    deformity_lateral[i] if deformity_lateral is not None and deformity_lateral[i] is not None else 0,
                 ])
 
 

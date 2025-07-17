@@ -8,7 +8,7 @@ from utils import Transformation3D, Real
 def smooth_transformations(raw: list[Transformation3D]) -> list[Transformation3D]:
     n = len(raw)
     x = np.arange(n)
-    nx = 100
+    nx = 101
     xi = np.linspace(0, n - 1, nx)
     y_rx, y_ry, y_rz = np.zeros_like(x, dtype=Real), np.zeros_like(x, dtype=Real), np.zeros_like(x, dtype=Real)
     y_tx, y_ty, y_tz = np.zeros_like(x, dtype=Real), np.zeros_like(x, dtype=Real), np.zeros_like(x, dtype=Real)

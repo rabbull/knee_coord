@@ -40,8 +40,7 @@ def do_plot_cartilage_thickness_curve(
         for point_index, point in enumerate(frame_deepest_points[frame_index]):
             if point is None:
                 continue
-            origin = np.array([point], dtype=Real) - ray_direction * 1e-3
-            print(point, origin)
+            origin = np.array([point], dtype=Real) - ray_direction * 1e3
             hits, ray_indices, _ = \
                 cart_mesh.ray.intersects_location(origin, ray_direction, multiple_hits=True)
             if len(ray_indices) >= 2:

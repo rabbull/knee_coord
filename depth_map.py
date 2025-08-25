@@ -45,7 +45,6 @@ def calc_contact_deepest_points(
         deepest_points[base] = \
             do_calc_contact_deepest_points(coords, frame_contact_component_depth_map_origins,
                                            frame_contact_component_depth_map_depths)
-    print(deepest_points)
     return deepest_points
 
 

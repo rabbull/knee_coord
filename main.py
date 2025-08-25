@@ -164,14 +164,15 @@ def main():
                                                 task_frame_extended_tibia_meshes,
                                             ])
 
-    if config.DEPTH_DIRECTION == config.DepthDirection.Z_AXIS_TIBIA or config.DEPTH_DIRECTION == config.DepthDirection.Z_AXIS_FEMUR:
-        base = config.BoneType.TIBIA if config.DEPTH_DIRECTION == config.DepthDirection.Z_AXIS_TIBIA else config.BoneType.FEMUR
-
+    z_axis_base_map = {config.DepthDirection.Z_AXIS_TIBIA: config.BoneType.TIBIA,
+                       config.DepthDirection.Z_AXIS_FEMUR: config.BoneType.FEMUR}
+    if config.DEPTH_DIRECTION in z_axis_base_map:
         def job(_, frame_coordinates):
-            return [coord.t.unit_z for coord in frame_coordinates[base]]
+            return [coord.t.unit_z for coord in frame_coordinates[z_axis_base_map[config.DEPTH_DIRECTION]]]
     elif config.DEPTH_DIRECTION == config.DepthDirection.CONTACT_PLANE:
         job = calc_frame_contact_plane_normal_vectors
     elif config.DEPTH_DIRECTION == config.DepthDirection.VERTEX_NORMAL:
+        raise NotImplemented("Deprecated")
         def job(contact_areas, _):
             return [contact_area.vertex_normal for contact_area in contact_areas]
     else:

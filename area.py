@@ -35,7 +35,6 @@ def do_plot_contact_area_curve(
         medial_area, lateral_area = 0, 0
         for contact_component in contact_components:
             area = contact_component.area
-            print(contact_component.vertices, area)
             x_pos = coordination.project(contact_component.centroid)[0]
             if (x_pos > 0 and config.KNEE_SIDE == config.KneeSide.LEFT) \
                     or (x_pos < 0 and config.KNEE_SIDE == config.KneeSide.RIGHT):

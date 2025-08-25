@@ -11,7 +11,6 @@ from bone import BoneCoordination
 def plot_contact_area_curve(
         frame_contact_components: list[list[trimesh.Trimesh]],
         frame_coordinates: dict[config.BoneType, list[BoneCoordination]],
-        frame_ray_directions: list[np.ndarray],
 ):
     res = {}
     for base in frame_coordinates:

@@ -314,7 +314,7 @@ def main():
         ])
 
     task_area_curve = ctx.add_task('area_curve', plot_contact_area_curve, deps=[
-        task_frame_contact_components, task_frame_coordinates, task_frame_ray_directions,
+        task_frame_contact_components, task_frame_coordinates,
     ])
 
     task_dump_all_data = ctx.add_task('dump_all_data', dump_all_data, deps=[

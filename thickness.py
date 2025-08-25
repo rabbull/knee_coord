@@ -94,7 +94,7 @@ def plot_cartilage_thickness_curve_sum(tibia_cart_thickness, femur_cart_thicknes
         ax.plot(lateral, label='Lateral')
         ax.legend()
         ax.set_title(f'Cartilage Thickness Curve - Sum - Base {base}')
-        fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'cartilage_thickness_base_{base}_sum.jpg'))
+        fig.savefig(os.path.join(config.OUTPUT_DIRECTORY, f'cartilage_thickness_base_{base.value}_sum.jpg'))
         plt.close(fig)
         res[base] = (medial, lateral)
     return res

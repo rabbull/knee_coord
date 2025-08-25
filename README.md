@@ -17,27 +17,16 @@ git clone https://github.com/rabbull/knee_coord.git
 cd knee_coord
 ```
 
-### 2. （可选）创建虚拟环境
+### 2. 安装
 
-使用 Virtual Env：
-```bash
-python -m virtualenv .venv
-source .venv/bin/activate
-```
-
-或者使用 Conda
-```bash
-conda create -n knee
-conda activate knee
-```
-
-### 3. 安装依赖
+该项目使用 `uv` 管理依赖，默认情况下它会在项目根目录创建虚拟环境并安装所需依赖，
+`uv` 的安装说明和使用说明请参见[官方文档](https://docs.astral.sh/uv/)。
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
-### 4. 准备配置文件
+### 3. 准备配置文件
 
 复制示例配置并根据需要修改模型路径、运动数据以及任务开关：
 
@@ -45,10 +34,10 @@ pip install -r requirements.txt
 cp config.py.example config.py
 ```
 
-### 5. 运行
+### 4. 运行
 
 ```bash
-python main.py
+uv run main.py
 ```
 
 所有输出默认保存到 `output/` 目录，可在 `config.py` 中修改 `OUTPUT_DIRECTORY`。

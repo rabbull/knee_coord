@@ -37,6 +37,8 @@ WORLD_AXIS = my_axis(axis_length=1000, axis_radius=2)
 
 
 def main():
+    check_config()
+
     ctx = task.Context()
 
     if config.IGNORE_CARTILAGE:
@@ -172,7 +174,7 @@ def main():
     elif config.DEPTH_DIRECTION == config.DepthDirection.CONTACT_PLANE:
         job = calc_frame_contact_plane_normal_vectors
     elif config.DEPTH_DIRECTION == config.DepthDirection.VERTEX_NORMAL:
-        raise NotImplemented("Deprecated")
+        raise NotImplemented("VERTEX_NORMAL is no longer supported")
         def job(contact_areas, _):
             return [contact_area.vertex_normal for contact_area in contact_areas]
     else:
@@ -405,6 +407,13 @@ def dump_all_data(
                     deformity_medial[i] if deformity_medial is not None and deformity_medial[i] is not None else 0,
                     deformity_lateral[i] if deformity_lateral is not None and deformity_lateral[i] is not None else 0,
                 ])
+
+
+def check_config():
+    if config.DEPTH_DIRECTION == config.DepthDirection.CONTACT_PLANE and config.IGNORE_CARTILAGE:
+        raise ValueError("CONTACT_PLANE must not be used with IGNORE_CARTILAGE")
+    if config.DEPTH_DIRECTION == config.DepthDirection.VERTEX_NORMAL:
+        raise ValueError("VERTEX_NORMAL is no longer supported")
 
 
 if __name__ == "__main__":

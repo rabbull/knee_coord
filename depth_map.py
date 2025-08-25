@@ -334,6 +334,7 @@ def gen_contact_depth_map_mask(
 def calc_contact_depth_map(frame_ray_directions, frame_contact_components):
     res = []
     for direction, components in tqdm.tqdm(zip(frame_ray_directions, frame_contact_components)):
+        # femur's z axis don't intersect with the contact components
         if config.DEPTH_BASE_BONE == config.BoneType.FEMUR:
             direction = -direction
         depth_maps = []
@@ -511,10 +512,11 @@ def do_plot_min_distance_curve(name, frame_bone_distance_origins, frame_bone_dis
 
 
 def calc_frame_contact_plane_normal_vectors(frame_contact_areas: list[trimesh.Trimesh],
-                                            coords: list[BoneCoordination]) -> list[np.ndarray]:
+                                            coordinates: dict[config.BoneType, list[BoneCoordination]]) -> list[np.ndarray]:
     normal_vectors = []
+    coordinates = coordinates[config.BoneType.FEMUR]
     for idx, contact_area in enumerate(frame_contact_areas):
-        uz = normalize(coords[idx].t.unit_z)
+        uz = normalize(coordinates[idx].t.unit_z)
         if contact_area.is_empty:
             normal_vectors.append(uz)
             continue
@@ -523,7 +525,7 @@ def calc_frame_contact_plane_normal_vectors(frame_contact_areas: list[trimesh.Tr
         adj_vertices = vertices - centroid
         u, s, vh = svd(adj_vertices)
         normal = normalize(vh[-1, :])
-        if normal.dot(uz) > normal.dot(-uz):
+        if normal.dot(uz) < normal.dot(-uz):
             normal = -normal
         normal_vectors.append(normal)
     return normal_vectors

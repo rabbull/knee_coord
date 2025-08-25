@@ -7,7 +7,7 @@
       <excludeFolder url="file://$MODULE_DIR$/entry_task" />
       <excludeFolder url="file://$MODULE_DIR$/venv" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.13 virtualenv at ~/Workspaces/knee_coord/.venv" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.13 (knee_coord)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

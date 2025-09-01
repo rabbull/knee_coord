@@ -156,8 +156,6 @@ def do_plot_contact_depth_maps(
 
     frames = []
     for frame_index in tqdm.tqdm(range(n)):
-        # if frame_index in exclude_frames:
-        #     continue
         coord = frame_coordinates[frame_index]
         origins = frame_bone_distance_map_origins[frame_index].astype(Real)
         distances = frame_bone_distance_map_distances[frame_index]
@@ -199,14 +197,15 @@ def do_plot_contact_depth_maps(
 
         g_z = []
         for i in range(2):
-            if (g_origins_2d[i] is not None and len(g_origins_2d[i]) > 1
-                    and g_depth[i] is not None and len(g_depth[i]) > 1):
-                o, d = g_origins_2d[i], g_depth[i]
-                tree = cKDTree(o)
-                z = griddata(o, d, (grid_x, grid_y), method='linear')
-                dists, _ = tree.query(grid_points)
-                z.ravel()[dists > 2] = np.nan
-                g_z.append(z)
+            if (g_origins_2d[i] is None or len(g_origins_2d[i]) <= 1) \
+                    or (g_depth[i] is None or len(g_depth[i]) <= 1):
+                continue
+            o, d = g_origins_2d[i], g_depth[i]
+            z = griddata(o, d, (grid_x, grid_y), method='linear')
+            tree = cKDTree(o)
+            dists, _ = tree.query(grid_points)
+            z.ravel()[dists > 2] = np.nan
+            g_z.append(z)
 
         if len(g_z) == 2:
             z = np.where(np.isnan(g_z[0]), g_z[1], g_z[0])
@@ -216,8 +215,9 @@ def do_plot_contact_depth_maps(
         else:
             z = np.full(grid_x.shape, np.nan)
 
-        heatmap_mask_gray = np.array(heatmap_mask.convert("L"))
-        z = np.rot90(np.where(heatmap_mask_gray < 128, np.rot90(z), np.nan), k=-1)
+        if heatmap_mask is not None:
+            heatmap_mask_gray = np.array(heatmap_mask.convert("L"))
+            z = np.rot90(np.where(heatmap_mask_gray < 128, np.rot90(z), np.nan), k=-1)
 
         # depth map
         fig, ax = plt.subplots()
@@ -318,7 +318,10 @@ def gen_contact_depth_map_mask(
         cart_meshes: None | dict[config.BoneType, trimesh.Trimesh] = None) -> dict[config.BoneType, Image.Image]:
     res = config.DEPTH_MAP_RESOLUTION
     masks = {}
-    gen_meshes = depth_map_bg_meshes_generator('#FFFFFF', '#000000')
+    bone_color, cart_color = '#FFFFFF', '#000000'
+    if config.IGNORE_CARTILAGE:
+        bone_color = cart_color
+    gen_meshes = depth_map_bg_meshes_generator(bone_color, cart_color)
     for base, extent in extents.items():
         coord = coords[base]
         meshes = gen_meshes(base, bone_meshes, cart_meshes)

@@ -98,7 +98,7 @@ def plot_contact_depth_maps(extents,
         deepest_points = frame_deepest_points[base]
         coords = frame_coordinates[base]
         frames[base] = do_plot_contact_depth_maps(
-            base.value,
+            base,
             extent,
             background,
             heatmap_mask,
@@ -114,7 +114,7 @@ def plot_contact_depth_maps(extents,
 
 
 def do_plot_contact_depth_maps(
-        name,
+        base,
         extent,
         background,
         heatmap_mask,
@@ -126,6 +126,7 @@ def do_plot_contact_depth_maps(
         frame_contact_component_depth_map_depths,
         frame_deepest_points,
 ):
+    name = base.value
     n = len(frame_bone_distance_map_distances)
     res = config.DEPTH_MAP_RESOLUTION
     grid_x, grid_y = np.mgrid[extent[0]:extent[1]:res[0] * 1j, extent[2]:extent[3]:res[1] * 1j]
@@ -177,9 +178,6 @@ def do_plot_contact_depth_maps(
                 s_origins = (np.round(origins, decimals=3) * 1e4).astype(np.int64)
                 s_vertices = (np.round(c_vertices, decimals=3) * 1e4).astype(np.int64)
                 intersect = np.intersect1d(s_origins, s_vertices)
-                # o_view = s_origins.view([('', s_origins.dtype)] * 2)
-                # v_view = s_vertices.view([('', s_vertices.dtype)] * 2)
-                # intersect = np.intersect1d(o_view, v_view)
                 keep = np.all(~np.isin(s_origins, intersect), axis=1)
                 origins = origins[keep]
                 depths = depths[keep]
@@ -230,6 +228,9 @@ def do_plot_contact_depth_maps(
             alpha=0.5,
             extend='both',
         )
+        if base == config.BoneType.FEMUR:
+            # FEMUR's z axis is pointing backwards
+            ax.invert_xaxis()
         cb = fig.colorbar(im, ax=ax, extend='both')
         cb.set_label('Depth')
 

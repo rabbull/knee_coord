@@ -19,6 +19,7 @@ def load_frame_bone_coordinates_raw() -> list[tuple[BoneCoordination, BoneCoordi
     with open(config.MOVEMENT_DATA_FILE, 'r') as fp:
         lines = list(filter(lambda l: l.startswith('['), fp.readlines()))
     frame_transformations = []
+    femur_transformation, tibia_transformation = None, None
     for line_index, line in enumerate(lines):
         data = np.array(json.loads(line), dtype=Real)
         if line_index % 2 == 0:

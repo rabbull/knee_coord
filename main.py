@@ -174,7 +174,7 @@ def main():
     elif config.DEPTH_DIRECTION == config.DepthDirection.CONTACT_PLANE:
         job = calc_frame_contact_plane_normal_vectors
     elif config.DEPTH_DIRECTION == config.DepthDirection.VERTEX_NORMAL:
-        raise NotImplemented("VERTEX_NORMAL is no longer supported")
+        raise NotImplementedError("VERTEX_NORMAL is no longer supported")
         def job(contact_areas, _):
             return [contact_area.vertex_normal for contact_area in contact_areas]
     else:

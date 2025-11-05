@@ -76,7 +76,11 @@ def do_calc_contact_deepest_points(
             if coord.project(origin)[0] > 0 and right[1] < depth:
                 right = (origin, depth)
 
-        frame_deepest_points.append((left[0], right[0]))
+        # (medial, lateral)
+        e = (left[0], right[0])
+        if config.KNEE_SIDE == config.KneeSide.LEFT:
+            e = (right[0], left[0])
+        frame_deepest_points.append(e)
 
     return frame_deepest_points
 
@@ -559,16 +563,20 @@ def do_plot_deepest_points(
         extent: tuple[float, float, float, float],
         frame_deepest_points: list[tuple[None | np.ndarray, None | np.ndarray]],
         frame_coordinates: list[BoneCoordination],
-) -> dict[str, np.ndarray]:
+) -> dict[str, list[None | np.ndarray]]:
     left_points = []
     right_points = []
     for coord, (left, right) in zip(frame_coordinates, frame_deepest_points):
         if left is not None:
             left = coord.project(left)[:2]
             left_points.append(left)
+        else:
+            left_points.append(None)
         if right is not None:
             right = coord.project(right)[:2]
             right_points.append(right)
+        else:
+            right_points.append(None)
 
     if config.KNEE_SIDE == config.KneeSide.LEFT:
         points = {
@@ -586,13 +594,12 @@ def do_plot_deepest_points(
     fig, ax = plt.subplots()
     ax.imshow(background, extent=extent, interpolation='none', aspect='equal')
 
-    np_pts = {}
-    for name, pts in points.items():
+    for name, side_points in points.items():
+        pts = list(filter(lambda p: p is not None, side_points))
         if len(pts) == 0:
             continue
-        pts = np.array(pts)
-        ax.plot(pts[:, 0], pts[:, 1], marker='+', label=name)
-        np_pts[name] = pts
+        markers = np.array(pts)
+        ax.plot(markers[:, 0], markers[:, 1], marker='+', label=name)
     ax.legend()
     set_depth_map_axes(ax)
 
@@ -603,7 +610,7 @@ def do_plot_deepest_points(
     fig.savefig(img_path)
     plt.close(fig)
 
-    return np_pts
+    return points
 
 
 def plot_fixed_points(

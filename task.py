@@ -17,6 +17,10 @@ class Context(object):
         def __call__(self):
             return self.ctx.get(self.name)
 
+        @property
+        def completed(self):
+            return self.result is not None
+
     def __init__(self):
         self._tasks: dict[str, Context._Task] = {}
 
@@ -42,3 +46,4 @@ class Context(object):
             task.result = task.job(*deps)
             print(f'Task {task.name} finished.')
         return task.result
+

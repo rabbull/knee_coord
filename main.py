@@ -321,7 +321,7 @@ def main():
 
     task_dump_all_data = ctx.add_task('dump_all_data', dump_all_data, deps=[
         task_dof_data_raw, task_dof_data_smoothed, task_area_curve, task_frame_deepest_points, task_max_depth_curve,
-        task_femur_deformity_curve, task_tibia_deformity_curve, task_deformity_curve,
+        task_femur_deformity_curve, task_tibia_deformity_curve, task_deformity_curve, task_plot_deepest_points,
     ])
 
     if config.GENERATE_CART_THICKNESS_CURVE:
@@ -353,7 +353,7 @@ def main():
 
 def dump_all_data(
         task_dof_data_raw, task_dof_data_smoothed, task_area_curve, task_frame_deepest_points, task_max_depth_curve,
-        task_femur_deformity_curve, task_tibia_deformity_curve, task_deformity_curve):
+        task_femur_deformity_curve, task_tibia_deformity_curve, task_deformity_curve, task_plot_deepest_points):
     dof = task_dof_data_raw
     if config.MOVEMENT_SMOOTH:
         dof = task_dof_data_smoothed
@@ -363,6 +363,7 @@ def dump_all_data(
     for base in [config.BoneType.FEMUR, config.BoneType.TIBIA]:
         area_medial, area_lateral = task_area_curve[base]
         deepest_points = task_frame_deepest_points[base]
+        deepest_points_projected = task_plot_deepest_points[base]
         max_depth, max_depth_medial, max_depth_lateral = task_max_depth_curve[base]
         femur_deformity_medial, femur_deformity_lateral = task_femur_deformity_curve[base] if task_femur_deformity_curve is not None else (None, None)
         tibia_deformity_medial, tibia_deformity_lateral = task_tibia_deformity_curve[base] if task_tibia_deformity_curve is not None else (None, None)
@@ -375,6 +376,8 @@ def dump_all_data(
                 'Rotation X', 'Rotation Y', 'Rotation Z', 'Area Medial', 'Area Lateral',
                 'Deepest Point Medial X', 'Deepest Point Medial Y', 'Deepest Point Medial Z',
                 'Deepest Point Lateral X', 'Deepest Point Lateral Y', 'Deepest Point Lateral Z',
+                'Deepest Point Medial X (Projected)', 'Deepest Point Medial Y (Projected)',
+                'Deepest Point Lateral X (Projected)', 'Deepest Point Lateral Y (Projected)',
                 'Depth', 'Depth Medial', 'Depth Lateral',
                 'Femur Deformity Medial', 'Femur Deformity Lateral',
                 'Tibia Deformity Medial', 'Tibia Deformity Lateral',
@@ -397,6 +400,10 @@ def dump_all_data(
                     deepest_points[i][1][0] if deepest_points[i] and deepest_points[i][1] is not None else 'None',
                     deepest_points[i][1][1] if deepest_points[i] and deepest_points[i][1] is not None else 'None',
                     deepest_points[i][1][2] if deepest_points[i] and deepest_points[i][1] is not None else 'None',
+                    deepest_points_projected['Medial'][i][0] if deepest_points_projected['Medial'] and deepest_points_projected['Medial'][i] is not None else 'None',
+                    deepest_points_projected['Medial'][i][1] if deepest_points_projected['Medial'] and deepest_points_projected['Medial'][i] is not None else 'None',
+                    deepest_points_projected['Lateral'][i][0] if deepest_points_projected['Lateral'] and deepest_points_projected['Lateral'][i] is not None else 'None',
+                    deepest_points_projected['Lateral'][i][1] if deepest_points_projected['Lateral'] and deepest_points_projected['Lateral'][i] is not None else 'None',
                     max_depth[i] if max_depth[i] is not None else 0,
                     max_depth_medial[i] if max_depth_medial[i] is not None else 0,
                     max_depth_lateral[i] if max_depth_lateral[i] is not None else 0,

@@ -1,3 +1,4 @@
+from abc import abstractmethod
 import functools
 import itertools
 import logging
@@ -18,7 +19,7 @@ from contact import get_contact_area, get_contact_components
 from depth_map import gen_contact_depth_map_extent, gen_contact_depth_map_background, gen_contact_depth_map_mask, \
     calc_frame_contact_plane_normal_vectors, calc_bone_distance_map, calc_contact_depth_map, plot_max_depth_curve, \
     plot_min_distance_curve, calc_contact_deepest_points, plot_contact_depth_maps, gen_depth_map_animation, \
-    do_plot_deepest_points, plot_deepest_points, plot_fixed_points
+    plot_deepest_points, plot_fixed_points
 from dof import calc_dof, dump_dof, plot_dof_curves
 from myio import load_mesh, load_coord_from_file, load_frame_bone_coordinates_csv, load_frame_bone_coordinates_raw, \
     load_fixed_points
@@ -26,6 +27,7 @@ from render import calc_extents
 from smooth import smooth_transformations
 from thickness import plot_cartilage_thickness_curve, plot_cartilage_thickness_curve_sum, plot_deformity_curve
 from utils import my_axis, mesh_union, take_kth, list_take_kth
+from data_column import dump_all_data
 
 # force off-screen renderer if a Linux system is used
 if platform.system() == "Linux":
@@ -118,6 +120,10 @@ def main():
         ctx.add_task('frame_bone_transformations_tibia_smoothed',
                      smooth_transformations,
                      deps=[task_frame_bone_transformations_tibia_raw])
+    
+    task_num_frames_raw = ctx.add_task('num_frames_raw', len, deps=[task_frame_bone_transformations_raw])
+    task_num_frames_smoothed = ctx.add_task('num_frames_smoothed', len, deps=[task_frame_bone_transformations_femur_smoothed])
+    task_num_frames = task_num_frames_raw if not config.MOVEMENT_SMOOTH else task_num_frames_smoothed
 
     task_frame_bone_transformations_femur = task_frame_bone_transformations_femur_smoothed if config.MOVEMENT_SMOOTH else task_frame_bone_transformations_femur_raw
     task_frame_bone_transformations_tibia = task_frame_bone_transformations_tibia_smoothed if config.MOVEMENT_SMOOTH else task_frame_bone_transformations_tibia_raw
@@ -321,7 +327,7 @@ def main():
 
     task_dump_all_data = ctx.add_task('dump_all_data', dump_all_data, deps=[
         task_dof_data_raw, task_dof_data_smoothed, task_area_curve, task_frame_deepest_points, task_max_depth_curve,
-        task_femur_deformity_curve, task_tibia_deformity_curve, task_deformity_curve, task_plot_deepest_points,
+        task_femur_deformity_curve, task_tibia_deformity_curve, task_deformity_curve, task_plot_deepest_points, task_plot_fixed_points,
     ])
 
     if config.GENERATE_CART_THICKNESS_CURVE:
@@ -349,71 +355,6 @@ def main():
         task_min_distance_curve()
     if config.GENERATE_FIXED_POINT_PLOT:
         task_plot_fixed_points()
-
-
-def dump_all_data(
-        task_dof_data_raw, task_dof_data_smoothed, task_area_curve, task_frame_deepest_points, task_max_depth_curve,
-        task_femur_deformity_curve, task_tibia_deformity_curve, task_deformity_curve, task_plot_deepest_points):
-    dof = task_dof_data_raw
-    if config.MOVEMENT_SMOOTH:
-        dof = task_dof_data_smoothed
-    y_tx, y_ty, y_tz, y_rx, y_ry, y_rz = dof
-    n = len(y_tx)
-    x = np.arange(1, n + 1)
-    for base in [config.BoneType.FEMUR, config.BoneType.TIBIA]:
-        area_medial, area_lateral = task_area_curve[base]
-        deepest_points = task_frame_deepest_points[base]
-        deepest_points_projected = task_plot_deepest_points[base]
-        max_depth, max_depth_medial, max_depth_lateral = task_max_depth_curve[base]
-        femur_deformity_medial, femur_deformity_lateral = task_femur_deformity_curve[base] if task_femur_deformity_curve is not None else (None, None)
-        tibia_deformity_medial, tibia_deformity_lateral = task_tibia_deformity_curve[base] if task_tibia_deformity_curve is not None else (None, None)
-        deformity_medial, deformity_lateral = task_deformity_curve[base] if task_deformity_curve is not None else (None, None)
-        csv_path = os.path.join(config.OUTPUT_DIRECTORY, f'{base.value}_all_data.csv')
-        with open(csv_path, 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL, escapechar='\\', )
-            writer.writerow([
-                'Frame', 'Translation X', 'Translation Y', 'Translation Z',
-                'Rotation X', 'Rotation Y', 'Rotation Z', 'Area Medial', 'Area Lateral',
-                'Deepest Point Medial X', 'Deepest Point Medial Y', 'Deepest Point Medial Z',
-                'Deepest Point Lateral X', 'Deepest Point Lateral Y', 'Deepest Point Lateral Z',
-                'Deepest Point Medial X (Projected)', 'Deepest Point Medial Y (Projected)',
-                'Deepest Point Lateral X (Projected)', 'Deepest Point Lateral Y (Projected)',
-                'Depth', 'Depth Medial', 'Depth Lateral',
-                'Femur Deformity Medial', 'Femur Deformity Lateral',
-                'Tibia Deformity Medial', 'Tibia Deformity Lateral',
-                'Deformity Medial', 'Deformity Lateral',
-            ])
-            for i in range(n):
-                writer.writerow([
-                    x[i],
-                    y_tx[i],
-                    y_ty[i],
-                    y_tz[i],
-                    y_rx[i],
-                    y_ry[i],
-                    y_rz[i],
-                    area_medial[i] if area_medial[i] is not None else 0,
-                    area_lateral[i] if area_lateral[i] is not None else 0,
-                    deepest_points[i][0][0] if deepest_points[i] and deepest_points[i][0] is not None else 'None',
-                    deepest_points[i][0][1] if deepest_points[i] and deepest_points[i][0] is not None else 'None',
-                    deepest_points[i][0][2] if deepest_points[i] and deepest_points[i][0] is not None else 'None',
-                    deepest_points[i][1][0] if deepest_points[i] and deepest_points[i][1] is not None else 'None',
-                    deepest_points[i][1][1] if deepest_points[i] and deepest_points[i][1] is not None else 'None',
-                    deepest_points[i][1][2] if deepest_points[i] and deepest_points[i][1] is not None else 'None',
-                    deepest_points_projected['Medial'][i][0] if deepest_points_projected['Medial'] and deepest_points_projected['Medial'][i] is not None else 'None',
-                    deepest_points_projected['Medial'][i][1] if deepest_points_projected['Medial'] and deepest_points_projected['Medial'][i] is not None else 'None',
-                    deepest_points_projected['Lateral'][i][0] if deepest_points_projected['Lateral'] and deepest_points_projected['Lateral'][i] is not None else 'None',
-                    deepest_points_projected['Lateral'][i][1] if deepest_points_projected['Lateral'] and deepest_points_projected['Lateral'][i] is not None else 'None',
-                    max_depth[i] if max_depth[i] is not None else 0,
-                    max_depth_medial[i] if max_depth_medial[i] is not None else 0,
-                    max_depth_lateral[i] if max_depth_lateral[i] is not None else 0,
-                    femur_deformity_medial[i] if femur_deformity_medial is not None and femur_deformity_medial[i] is not None else 0,
-                    femur_deformity_lateral[i] if femur_deformity_lateral is not None and femur_deformity_lateral[i] is not None else 0,
-                    tibia_deformity_medial[i] if tibia_deformity_medial is not None and tibia_deformity_medial[i] is not None else 0,
-                    tibia_deformity_lateral[i] if tibia_deformity_lateral is not None and tibia_deformity_lateral[i] is not None else 0,
-                    deformity_medial[i] if deformity_medial is not None and deformity_medial[i] is not None else 0,
-                    deformity_lateral[i] if deformity_lateral is not None and deformity_lateral[i] is not None else 0,
-                ])
 
 
 def check_config():

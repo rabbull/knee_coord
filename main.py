@@ -1,12 +1,9 @@
 from abc import abstractmethod
 import functools
-import itertools
 import logging
-import csv
 import os
 import platform
 
-import numpy as np
 import trimesh
 
 import config
@@ -175,14 +172,12 @@ def main():
     z_axis_base_map = {config.DepthDirection.Z_AXIS_TIBIA: config.BoneType.TIBIA,
                        config.DepthDirection.Z_AXIS_FEMUR: config.BoneType.FEMUR}
     if config.DEPTH_DIRECTION in z_axis_base_map:
-        def job(_, frame_coordinates):
+        def job(frame_contact_areas, frame_coordinates):
             return [coord.t.unit_z for coord in frame_coordinates[z_axis_base_map[config.DEPTH_DIRECTION]]]
     elif config.DEPTH_DIRECTION == config.DepthDirection.CONTACT_PLANE:
         job = calc_frame_contact_plane_normal_vectors
     elif config.DEPTH_DIRECTION == config.DepthDirection.VERTEX_NORMAL:
         raise NotImplementedError("VERTEX_NORMAL is no longer supported")
-        def job(contact_areas, _):
-            return [contact_area.vertex_normal for contact_area in contact_areas]
     else:
         raise NotImplementedError(
             f'Unknown DEPTH_DIRECTION: {config.DEPTH_DIRECTION}')

@@ -520,9 +520,9 @@ def do_plot_min_distance_curve(name, frame_bone_distance_origins, frame_bone_dis
 
 
 def calc_frame_contact_plane_normal_vectors(frame_contact_areas: list[trimesh.Trimesh],
-                                            coordinates: dict[config.BoneType, list[BoneCoordination]]) -> list[np.ndarray]:
+                                            frame_coordinates: dict[config.BoneType, list[BoneCoordination]]) -> list[np.ndarray]:
     normal_vectors = []
-    coordinates = coordinates[config.BoneType.FEMUR]
+    coordinates = frame_coordinates[config.BoneType.FEMUR]
     for idx, contact_area in enumerate(frame_contact_areas):
         uz = normalize(coordinates[idx].t.unit_z)
         if contact_area.is_empty:
@@ -564,32 +564,20 @@ def do_plot_deepest_points(
         frame_deepest_points: list[tuple[None | np.ndarray, None | np.ndarray]],
         frame_coordinates: list[BoneCoordination],
 ) -> dict[str, list[None | np.ndarray]]:
-    left_points = []
-    right_points = []
-    for coord, (left, right) in zip(frame_coordinates, frame_deepest_points):
-        if left is not None:
-            left = coord.project(left)[:2]
-            left_points.append(left)
-        else:
-            left_points.append(None)
-        if right is not None:
-            right = coord.project(right)[:2]
-            right_points.append(right)
-        else:
-            right_points.append(None)
+    medial_points = []
+    lateral_points = []
+    for coord, (medial, lateral) in zip(frame_coordinates, frame_deepest_points):
+        if medial is not None:
+            medial = coord.project(medial)[:2]
+        if lateral is not None:
+            lateral = coord.project(lateral)[:2]
+        medial_points.append(medial)
+        lateral_points.append(lateral)
 
-    if config.KNEE_SIDE == config.KneeSide.LEFT:
-        points = {
-            'Medial': right_points,
-            'Lateral': left_points,
-        }
-    elif config.KNEE_SIDE == config.KneeSide.RIGHT:
-        points = {
-            'Medial': left_points,
-            'Lateral': right_points,
-        }
-    else:
-        raise ValueError('unreachable')
+    points = {
+        'Medial': medial_points,
+        'Lateral': lateral_points,
+    }
 
     fig, ax = plt.subplots()
     ax.imshow(background, extent=extent, interpolation='none', aspect='equal')
